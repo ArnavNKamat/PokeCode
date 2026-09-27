@@ -13,10 +13,10 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "poke-code.helloWorld",
-        "title": "Hello World"
-      }
+        {
+            "command": "poke-code.openPokemon",
+            "title": "PokeCode: Open Pokémon"
+        }
     ]
   },
   "scripts": {
