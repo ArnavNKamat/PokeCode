@@ -14,8 +14,12 @@
   "contributes": {
     "commands": [
         {
-            "command": "poke-code.openPokemon",
-            "title": "PokeCode: Open Pokémon"
+            "command": "poke-code.helloWorld",
+            "title": "PokeCode: Open Game"
+        },
+        {
+            "command": "poke-code.resetGame",
+            "title": "PokeCode: Reset Game"
         }
     ]
   },
