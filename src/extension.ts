@@ -1,233 +1,58 @@
 import * as vscode from "vscode";
 
-/* =========================================================
-   TYPES
-   ========================================================= */
-
-interface PokemonData {
-    id: number;
-    name: string;
-    catchRate: number;
-    minLevel: number;
-    maxLevel: number;
-    image: string;
-}
-
-interface PokemonInstance {
-    id: number;
-    name: string;
-    nickname: string;
-    level: number;
-    experience: number;
-}
+import { Pokemon, pokemonList } from "./pokemon";
+import { getRandomEncounter } from "./encounters";
 
 interface GameState {
-    starterCaught: boolean;
-    party: PokemonInstance[];
-    box: PokemonInstance[];
-    seenPokemon: number[];
-    caughtPokemon: number[];
+    seen: number[];
+    caught: number[];
 }
 
-interface Encounter {
-    pokemon: PokemonData;
-    level: number;
-}
+let panel: vscode.WebviewPanel | undefined;
+let currentPokemon: Pokemon | undefined;
 
+type Screen =
+    | "home"
+    | "encounter"
+    | "pokedex"
+    | "box"
+    | "settings";
 
-/* =========================================================
-   POKEMON DATA
-   ========================================================= */
-
-const POKEMON: PokemonData[] = [
-
-    {
-        id: 1,
-        name: "Bulbasaur",
-        catchRate: 45,
-        minLevel: 5,
-        maxLevel: 5,
-        image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-i/red-blue/1.png"
-    },
-
-    {
-        id: 4,
-        name: "Charmander",
-        catchRate: 45,
-        minLevel: 5,
-        maxLevel: 5,
-        image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-i/red-blue/4.png"
-    },
-
-    {
-        id: 7,
-        name: "Squirtle",
-        catchRate: 45,
-        minLevel: 5,
-        maxLevel: 5,
-        image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-i/red-blue/7.png"
-    },
-
-    {
-        id: 16,
-        name: "Pidgey",
-        catchRate: 255,
-        minLevel: 2,
-        maxLevel: 5,
-        image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-i/red-blue/16.png"
-    },
-
-    {
-        id: 19,
-        name: "Rattata",
-        catchRate: 255,
-        minLevel: 2,
-        maxLevel: 4,
-        image: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-i/red-blue/19.png"
-    }
-];
-
-
-/* =========================================================
-   EXTENSION STATE
-   ========================================================= */
-
-let gamePanel: vscode.WebviewPanel | undefined;
-
-let currentEncounter: Encounter | undefined;
-
-
-/* =========================================================
-   DEFAULT GAME STATE
-   ========================================================= */
-
-function createNewGame(): GameState {
-
-    return {
-        starterCaught: false,
-        party: [],
-        box: [],
-        seenPokemon: [],
-        caughtPokemon: []
-    };
-}
-
-
-/* =========================================================
-   LOAD GAME
-   ========================================================= */
-
-function getGameState(
-    context: vscode.ExtensionContext
-): GameState {
-
-    return context.globalState.get<GameState>(
-        "pokeCode.gameState",
-        createNewGame()
-    );
-}
-
-
-/* =========================================================
-   SAVE GAME
-   ========================================================= */
-
-async function saveGameState(
-    context: vscode.ExtensionContext,
-    state: GameState
-): Promise<void> {
-
-    await context.globalState.update(
-        "pokeCode.gameState",
-        state
-    );
-}
-
-
-/* =========================================================
-   ACTIVATE
-   ========================================================= */
+let currentScreen: Screen = "home";
 
 export function activate(
     context: vscode.ExtensionContext
 ) {
 
-    console.log(
-        'PokeCode extension activated.'
-    );
-
-
-    /* -----------------------------------------------------
-       MAIN COMMAND
-       ----------------------------------------------------- */
-
-    const startCommand =
+    const openCommand =
         vscode.commands.registerCommand(
-            "poke-code.helloWorld",
+            "poke-code.open",
             () => {
-
-                openGame(context);
-
+                openPokeCode(context);
             }
         );
 
-    context.subscriptions.push(startCommand);
-
-
-    /* -----------------------------------------------------
-       RESET GAME
-       ----------------------------------------------------- */
-
-    const resetCommand =
-        vscode.commands.registerCommand(
-            "poke-code.resetGame",
-            async () => {
-
-                await context.globalState.update(
-                    "pokeCode.gameState",
-                    undefined
-                );
-
-                vscode.window.showInformationMessage(
-                    "PokeCode save has been reset."
-                );
-
-                if (gamePanel) {
-
-                    openGame(context);
-
-                }
-
-            }
-        );
-
-    context.subscriptions.push(resetCommand);
+    context.subscriptions.push(openCommand);
 }
 
-
-/* =========================================================
-   OPEN GAME
-   ========================================================= */
-
-function openGame(
+function openPokeCode(
     context: vscode.ExtensionContext
 ) {
 
-    if (gamePanel) {
+    if (panel) {
 
-        gamePanel.reveal(
+        panel.reveal(
             vscode.ViewColumn.One
         );
 
-        updateGameScreen(context);
+        updateScreen(context);
 
         return;
     }
 
-
-    gamePanel =
+    panel =
         vscode.window.createWebviewPanel(
-            "pokeCodeGame",
+            "pokeCode",
             "PokeCode",
             vscode.ViewColumn.One,
             {
@@ -235,540 +60,293 @@ function openGame(
             }
         );
 
-
-    gamePanel.onDidDispose(
+    panel.onDidDispose(
         () => {
 
-            gamePanel = undefined;
+            panel = undefined;
+            currentPokemon = undefined;
 
-        },
-        null,
-        context.subscriptions
+        }
     );
 
+    panel.webview.onDidReceiveMessage(
+        message => {
 
-    gamePanel.webview.onDidReceiveMessage(
-        async message => {
+            switch (message.command) {
 
-            await handleMessage(
-                context,
-                message
-            );
+                case "home":
+                    currentScreen = "home";
+                    currentPokemon = undefined;
+                    updateScreen(context);
+                    break;
 
-        },
-        undefined,
-        context.subscriptions
+                case "encounter":
+                    currentScreen = "encounter";
+                    currentPokemon = undefined;
+                    updateScreen(context);
+                    break;
+
+                case "spawn":
+                    spawnPokemon(context);
+                    break;
+
+                case "catch":
+                    catchPokemon(context);
+                    break;
+
+                case "run":
+                    runAway(context);
+                    break;
+
+                case "pokedex":
+                    currentScreen = "pokedex";
+                    currentPokemon = undefined;
+                    updateScreen(context);
+                    break;
+
+                case "box":
+                    currentScreen = "box";
+                    currentPokemon = undefined;
+                    updateScreen(context);
+                    break;
+
+                case "settings":
+                    currentScreen = "settings";
+                    currentPokemon = undefined;
+                    updateScreen(context);
+                    break;
+
+                case "reset":
+                    resetGame(context);
+                    break;
+            }
+
+        }
     );
 
-
-    updateGameScreen(context);
+    updateScreen(context);
 }
 
-
-/* =========================================================
-   MESSAGE HANDLER
-   ========================================================= */
-
-async function handleMessage(
-    context: vscode.ExtensionContext,
-    message: any
+function spawnPokemon(
+    context: vscode.ExtensionContext
 ) {
+
+    const pokemon =
+        getRandomEncounter();
+
+    if (!pokemon) {
+
+        currentPokemon = undefined;
+
+        vscode.window.showInformationMessage(
+            "Nothing appeared..."
+        );
+
+        updateScreen(context);
+
+        return;
+    }
+
+    currentPokemon = pokemon;
 
     const state =
         getGameState(context);
 
+    if (!state.seen.includes(pokemon.id)) {
 
-    /* -----------------------------------------------------
-       STARTER
-       ----------------------------------------------------- */
-
-    if (message.command === "chooseStarter") {
-
-        const starter =
-            POKEMON.find(
-                pokemon =>
-                    pokemon.id === message.id
-            );
-
-        if (!starter) {
-            return;
-        }
-
-
-        const starterInstance: PokemonInstance = {
-
-            id: starter.id,
-
-            name: starter.name,
-
-            nickname: starter.name,
-
-            level: 5,
-
-            experience: 0
-
-        };
-
-
-        state.starterCaught = true;
-
-        state.party.push(
-            starterInstance
+        state.seen.push(
+            pokemon.id
         );
 
-
-        if (!state.seenPokemon.includes(starter.id)) {
-
-            state.seenPokemon.push(
-                starter.id
-            );
-
-        }
-
-
-        if (!state.caughtPokemon.includes(starter.id)) {
-
-            state.caughtPokemon.push(
-                starter.id
-            );
-
-        }
-
-
-        await saveGameState(
+        saveGameState(
             context,
             state
         );
-
-
-        currentEncounter = undefined;
-
-        updateGameScreen(context);
-
-        return;
     }
 
-
-    /* -----------------------------------------------------
-       FIND WILD POKEMON
-       ----------------------------------------------------- */
-
-    if (message.command === "encounter") {
-
-        currentEncounter =
-            generateEncounter(
-                state
-            );
-
-
-        updateGameScreen(context);
-
-        return;
-    }
-
-
-    /* -----------------------------------------------------
-       CATCH
-       ----------------------------------------------------- */
-
-    if (message.command === "catch") {
-
-        if (!currentEncounter) {
-            return;
-        }
-
-
-        const pokemon =
-            currentEncounter.pokemon;
-
-
-        /*
-         * Catch chance is calculated HERE.
-         * It is NOT calculated when the Pokémon
-         * first appears.
-         */
-
-        const success =
-            calculateCatch(
-                pokemon.catchRate
-            );
-
-
-        if (!success) {
-
-            updateGameScreen(
-                context,
-                "catchFailed"
-            );
-
-            return;
-        }
-
-
-        const caught: PokemonInstance = {
-
-            id: pokemon.id,
-
-            name: pokemon.name,
-
-            nickname: pokemon.name,
-
-            level: currentEncounter.level,
-
-            experience: 0
-
-        };
-
-
-        if (!state.caughtPokemon.includes(pokemon.id)) {
-
-            state.caughtPokemon.push(
-                pokemon.id
-            );
-
-        }
-
-
-        if (state.party.length < 6) {
-
-            state.party.push(
-                caught
-            );
-
-        } else {
-
-            state.box.push(
-                caught
-            );
-
-        }
-
-
-        await saveGameState(
-            context,
-            state
-        );
-
-
-        currentEncounter = undefined;
-
-
-        /*
-         * Ask for nickname after successful catch.
-         */
-
-        const nickname =
-            await vscode.window.showInputBox({
-
-                title: `You caught ${pokemon.name}!`,
-
-                prompt:
-                    "Give your Pokémon a nickname? Leave empty to keep its name.",
-
-                placeHolder:
-                    pokemon.name
-
-            });
-
-
-        if (
-            nickname !== undefined &&
-            nickname.trim() !== ""
-        ) {
-
-            const caughtPokemon =
-                state.party.find(
-                    p =>
-                        p.id === pokemon.id &&
-                        p.nickname === pokemon.name
-                );
-
-
-            if (caughtPokemon) {
-
-                caughtPokemon.nickname =
-                    nickname.trim();
-
-            } else {
-
-                const boxPokemon =
-                    state.box.find(
-                        p =>
-                            p.id === pokemon.id &&
-                            p.nickname === pokemon.name
-                    );
-
-
-                if (boxPokemon) {
-
-                    boxPokemon.nickname =
-                        nickname.trim();
-
-                }
-
-            }
-
-
-            await saveGameState(
-                context,
-                state
-            );
-
-        }
-
-
-        updateGameScreen(
-            context,
-            "caught"
-        );
-
-        return;
-    }
-
-
-    /* -----------------------------------------------------
-       RUN
-       ----------------------------------------------------- */
-
-    if (message.command === "run") {
-
-        if (!currentEncounter) {
-            return;
-        }
-
-
-        currentEncounter = undefined;
-
-
-        updateGameScreen(
-            context,
-            "ran"
-        );
-
-        return;
-    }
-
-
-    /* -----------------------------------------------------
-       SAVE
-       ----------------------------------------------------- */
-
-    if (message.command === "save") {
-
-        await saveGameState(
-            context,
-            state
-        );
-
-
-        vscode.window.showInformationMessage(
-            "Game saved."
-        );
-
-        return;
-    }
-
-
-    /* -----------------------------------------------------
-       LOAD
-       ----------------------------------------------------- */
-
-    if (message.command === "load") {
-
-        updateGameScreen(context);
-
-        return;
-    }
+    updateScreen(context);
 }
 
+function catchPokemon(
+    context: vscode.ExtensionContext
+) {
 
-/* =========================================================
-   ENCOUNTER GENERATION
-   ========================================================= */
-
-function generateEncounter(
-    state: GameState
-): Encounter | undefined {
-
-    /*
-     * Sometimes there is no Pokémon.
-     */
-
-    const encounterRoll =
-        Math.random();
-
-
-    if (encounterRoll < 0.30) {
-
-        return undefined;
-
+    if (!currentPokemon) {
+        return;
     }
 
+    const state =
+        getGameState(context);
 
-    /*
-     * For now Route 1 has:
-     *
-     * Rattata
-     * Pidgey
-     *
-     * Later we can add all routes.
-     */
+    if (!state.caught.includes(currentPokemon.id)) {
 
-    const routePokemon =
-        POKEMON.filter(
-            pokemon =>
-                pokemon.id === 16 ||
-                pokemon.id === 19
+        state.caught.push(
+            currentPokemon.id
         );
 
+        saveGameState(
+            context,
+            state
+        );
+    }
 
-    const pokemon =
-        routePokemon[
-            Math.floor(
-                Math.random() *
-                routePokemon.length
-            )
-        ];
+    vscode.window.showInformationMessage(
+        `${currentPokemon.name} was caught!`
+    );
 
+    currentPokemon = undefined;
 
-    const level =
-        randomInteger(
-            pokemon.minLevel,
-            pokemon.maxLevel
+    updateScreen(context);
+}
+
+function runAway(
+    context: vscode.ExtensionContext
+) {
+
+    if (!currentPokemon) {
+        return;
+    }
+
+    vscode.window.showInformationMessage(
+        `${currentPokemon.name} ran away!`
+    );
+
+    currentPokemon = undefined;
+
+    updateScreen(context);
+}
+
+function resetGame(
+    context: vscode.ExtensionContext
+) {
+
+    const state: GameState = {
+        seen: [],
+        caught: []
+    };
+
+    saveGameState(
+        context,
+        state
+    );
+
+    currentPokemon = undefined;
+    currentScreen = "home";
+
+    vscode.window.showInformationMessage(
+        "PokeCode data has been reset."
+    );
+
+    updateScreen(context);
+}
+
+function getGameState(
+    context: vscode.ExtensionContext
+): GameState {
+
+    const saved =
+        context.globalState.get<GameState>(
+            "pokeCode.gameState"
         );
 
+    if (!saved) {
+
+        return {
+            seen: [],
+            caught: []
+        };
+    }
 
     return {
+        seen: Array.isArray(saved.seen)
+            ? saved.seen
+            : [],
 
-        pokemon,
-
-        level
-
+        caught: Array.isArray(saved.caught)
+            ? saved.caught
+            : []
     };
 }
 
-
-/* =========================================================
-   CATCH CALCULATION
-   ========================================================= */
-
-function calculateCatch(
-    catchRate: number
-): boolean {
-
-    /*
-     * Gen I catch rates range from
-     * 3 to 255.
-     *
-     * This is a simplified catch calculation
-     * for our mini-game.
-     *
-     * The important part is that the roll
-     * happens ONLY when CATCH is pressed.
-     */
-
-    const chance =
-        catchRate / 255;
-
-
-    return Math.random() < chance;
-}
-
-
-/* =========================================================
-   RANDOM INTEGER
-   ========================================================= */
-
-function randomInteger(
-    min: number,
-    max: number
-): number {
-
-    return Math.floor(
-        Math.random() *
-        (max - min + 1)
-    ) + min;
-}
-
-
-/* =========================================================
-   UPDATE GAME SCREEN
-   ========================================================= */
-
-function updateGameScreen(
+function saveGameState(
     context: vscode.ExtensionContext,
-    result?: string
+    state: GameState
 ) {
 
-    if (!gamePanel) {
+    void context.globalState.update(
+        "pokeCode.gameState",
+        state
+    );
+}
+
+function updateScreen(
+    context: vscode.ExtensionContext
+) {
+
+    if (!panel) {
         return;
     }
-
 
     const state =
         getGameState(context);
 
-
-    gamePanel.webview.html =
-        getGameHTML(
-            state,
-            result
+    panel.webview.html =
+        getHTML(
+            context,
+            state
         );
 }
 
-
-/* =========================================================
-   MAIN HTML
-   ========================================================= */
-
-function getGameHTML(
-    state: GameState,
-    result?: string
+function spriteURL(
+    id: number
 ): string {
 
-
-    /* -----------------------------------------------------
-       STARTER SCREEN
-       ----------------------------------------------------- */
-
-    if (!state.starterCaught) {
-
-        return getStarterHTML();
-
-    }
-
-
-    /* -----------------------------------------------------
-       NO CURRENT ENCOUNTER
-       ----------------------------------------------------- */
-
-    if (!currentEncounter) {
-
-        return getMainGameHTML(
-            state,
-            result
-        );
-
-    }
-
-
-    /* -----------------------------------------------------
-       WILD POKEMON
-       ----------------------------------------------------- */
-
-    return getWildPokemonHTML(
-        state,
-        currentEncounter,
-        result
+    return (
+        "https://raw.githubusercontent.com/" +
+        "PokeAPI/sprites/master/sprites/pokemon/" +
+        `${id}.png`
     );
 }
 
+function getHTML(
+    context: vscode.ExtensionContext,
+    state: GameState
+): string {
 
-/* =========================================================
-   STARTER HTML
-   ========================================================= */
+    switch (currentScreen) {
 
-function getStarterHTML(): string {
+        case "encounter":
+            return getEncounterHTML(
+                state
+            );
+
+        case "pokedex":
+            return getPokedexHTML(
+                state
+            );
+
+        case "box":
+            return getBoxHTML(
+                state
+            );
+
+        case "settings":
+            return getSettingsHTML(
+                state
+            );
+
+        case "home":
+        default:
+            return getHomeHTML(
+                state
+            );
+    }
+}
+
+function getBaseHTML(
+    content: string,
+    state: GameState
+): string {
 
     return `
 
@@ -778,532 +356,345 @@ function getStarterHTML(): string {
 
 <head>
 
-<meta
-    charset="UTF-8"
->
-
-<meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
->
+<meta charset="UTF-8">
 
 <style>
+
+* {
+    box-sizing: border-box;
+}
 
 body {
 
     background: #111;
-
     color: white;
 
     font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
         Arial,
         sans-serif;
 
-    text-align: center;
+    margin: 0;
+    padding: 0;
+
+}
+
+.app {
+
+    max-width: 900px;
+    margin: auto;
 
     padding: 30px;
 
 }
 
-h1 {
+.header {
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    margin-bottom: 25px;
+
+}
+
+.logo {
+
+    font-size: 24px;
+    font-weight: bold;
 
     color: #f5d742;
 
 }
 
-.starters {
+.nav {
 
     display: flex;
+    gap: 8px;
 
-    justify-content: center;
+}
 
-    gap: 30px;
+.nav button {
 
-    margin-top: 30px;
+    padding: 7px 12px;
+    font-size: 13px;
+
+}
+
+button {
+
+    background: #292929;
+    color: white;
+
+    border: 1px solid #555;
+
+    border-radius: 7px;
+
+    padding: 11px 20px;
+
+    cursor: pointer;
+
+    font-size: 15px;
+
+}
+
+button:hover {
+
+    background: #3b3b3b;
+
+}
+
+.primary {
+
+    background: #d83b3b;
+    border-color: #e35b5b;
+
+}
+
+.primary:hover {
+
+    background: #ec4b4b;
 
 }
 
 .card {
 
-    background: #222;
+    background: #1d1d1d;
 
-    border: 2px solid #555;
+    border: 1px solid #303030;
 
-    border-radius: 12px;
-
-    padding: 20px;
-
-    width: 180px;
-
-    cursor: pointer;
-
-    transition: 0.2s;
-
-}
-
-.card:hover {
-
-    border-color: #f5d742;
-
-    transform:
-        translateY(-5px);
-
-}
-
-.card img {
-
-    width: 120px;
-
-    height: 120px;
-
-    image-rendering: pixelated;
-
-}
-
-button {
-
-    background: #333;
-
-    color: white;
-
-    border: 1px solid #777;
-
-    border-radius: 6px;
-
-    padding: 10px 18px;
-
-    cursor: pointer;
-
-}
-
-button:hover {
-
-    background: #555;
-
-}
-
-</style>
-
-</head>
-
-<body>
-
-<h1>Welcome to PokeCode</h1>
-
-<h2>Choose your first Pokémon</h2>
-
-<p>
-Your adventure begins with one of these three Pokémon.
-</p>
-
-<div class="starters">
-
-${getStarterCard(1)}
-
-${getStarterCard(4)}
-
-${getStarterCard(7)}
-
-</div>
-
-<script>
-
-const vscode =
-    acquireVsCodeApi();
-
-function chooseStarter(id) {
-
-    vscode.postMessage({
-
-        command:
-            "chooseStarter",
-
-        id:
-            id
-
-    });
-
-}
-
-</script>
-
-</body>
-
-</html>
-
-`;
-
-}
-
-
-/* =========================================================
-   STARTER CARD
-   ========================================================= */
-
-function getStarterCard(
-    id: number
-): string {
-
-    const pokemon =
-        POKEMON.find(
-            p => p.id === id
-        )!;
-
-
-    return `
-
-<div
-    class="card"
-    onclick="chooseStarter(${pokemon.id})"
->
-
-<img
-    src="${pokemon.image}"
->
-
-<h2>
-${pokemon.name}
-</h2>
-
-<p>
-Level 5
-</p>
-
-</div>
-
-`;
-
-}
-
-
-/* =========================================================
-   MAIN GAME SCREEN
-   ========================================================= */
-
-function getMainGameHTML(
-    state: GameState,
-    result?: string
-): string {
-
-
-    let message =
-        "What would you like to do?";
-
-
-    if (result === "ran") {
-
-        message =
-            "You ran away safely.";
-
-    }
-
-
-    if (result === "caught") {
-
-        message =
-            "Pokémon added to your team!";
-
-    }
-
-
-    if (result === "catchFailed") {
-
-        message =
-            "The Pokémon broke free!";
-
-    }
-
-
-    const partyHTML =
-        state.party.map(
-            pokemon => `
-
-<div class="partyPokemon">
-
-<img
-src="${getPokemonImage(pokemon.id)}"
->
-
-<div>
-
-<strong>
-${escapeHTML(pokemon.nickname)}
-</strong>
-
-<br>
-
-Lv. ${pokemon.level}
-
-</div>
-
-</div>
-
-`
-        ).join("");
-
-
-    return `
-
-<!DOCTYPE html>
-
-<html>
-
-<head>
-
-<meta charset="UTF-8">
-
-<style>
-
-body {
-
-    background: #111;
-
-    color: white;
-
-    font-family: Arial;
+    border-radius: 14px;
 
     padding: 25px;
 
 }
 
-h1 {
+.home {
 
-    color: #f5d742;
+    text-align: center;
 
-}
-
-.message {
-
-    background: #222;
-
-    padding: 15px;
-
-    border-radius: 8px;
-
-    margin-bottom: 20px;
+    padding: 50px 20px;
 
 }
 
-button {
+.homeBall {
 
-    padding: 12px 22px;
+    width: 130px;
+    height: 130px;
 
-    margin: 5px;
+    object-fit: contain;
 
-    border-radius: 7px;
+    image-rendering: pixelated;
 
-    border: 1px solid #777;
-
-    background: #333;
-
-    color: white;
-
-    cursor: pointer;
+    margin-bottom: 15px;
 
 }
 
-button:hover {
+.menu {
 
-    background: #555;
+    display: grid;
 
-}
+    grid-template-columns:
+        repeat(2, 1fr);
 
-.party {
+    gap: 15px;
 
     margin-top: 30px;
 
 }
 
-.partyPokemon {
+.menuButton {
 
-    display: flex;
+    padding: 25px;
 
-    align-items: center;
-
-    gap: 15px;
-
-    background: #222;
-
-    padding: 10px;
-
-    margin: 8px;
-
-    border-radius: 8px;
-
-}
-
-.partyPokemon img {
-
-    width: 60px;
-
-    height: 60px;
-
-    image-rendering: pixelated;
-
-}
-
-</style>
-
-</head>
-
-<body>
-
-<h1>PokeCode</h1>
-
-<div class="message">
-
-${message}
-
-</div>
-
-<button onclick="encounter()">
-Search for Pokémon
-</button>
-
-<button onclick="saveGame()">
-Save Game
-</button>
-
-<button onclick="loadGame()">
-Load Game
-</button>
-
-<div class="party">
-
-<h2>
-Party (${state.party.length}/6)
-</h2>
-
-${partyHTML}
-
-</div>
-
-<p>
-Box: ${state.box.length} Pokémon
-</p>
-
-<p>
-Pokédex: ${state.caughtPokemon.length} caught
-</p>
-
-<script>
-
-const vscode =
-    acquireVsCodeApi();
-
-
-function encounter() {
-
-    vscode.postMessage({
-
-        command:
-            "encounter"
-
-    });
-
-}
-
-
-function saveGame() {
-
-    vscode.postMessage({
-
-        command:
-            "save"
-
-    });
-
-}
-
-
-function loadGame() {
-
-    vscode.postMessage({
-
-        command:
-            "load"
-
-    });
-
-}
-
-</script>
-
-</body>
-
-</html>
-
-`;
-
-}
-
-
-/* =========================================================
-   WILD POKEMON HTML
-   ========================================================= */
-
-function getWildPokemonHTML(
-    state: GameState,
-    encounter: Encounter,
-    result?: string
-): string {
-
-
-    const pokemon =
-        encounter.pokemon;
-
-
-    let message =
-        `A wild ${pokemon.name} appeared!`;
-
-
-    if (result === "catchFailed") {
-
-        message =
-            `The wild ${pokemon.name} broke free!`;
-
-    }
-
-
-    return `
-
-<!DOCTYPE html>
-
-<html>
-
-<head>
-
-<meta charset="UTF-8">
-
-<style>
-
-body {
-
-    background: #111;
-
-    color: white;
-
-    font-family: Arial;
-
-    text-align: center;
-
-    padding: 30px;
-
-}
-
-h1 {
-
-    color: #f5d742;
+    font-size: 17px;
 
 }
 
 .encounter {
 
-    background: #222;
+    text-align: center;
 
-    border-radius: 15px;
+    padding: 35px;
 
-    padding: 30px;
+}
+
+.pokemonImage {
+
+    width: 220px;
+    height: 220px;
+
+    object-fit: contain;
+
+    image-rendering: pixelated;
+
+}
+
+.pokemonName {
+
+    font-size: 28px;
+
+    margin: 10px 0;
+
+}
+
+.type {
+
+    color: #aaa;
+
+}
+
+.actions {
+
+    margin-top: 20px;
+
+}
+
+.empty {
+
+    text-align: center;
+
+    padding: 50px;
+
+}
+
+.pokeball {
+
+    width: 100px;
+    height: 100px;
+
+    object-fit: contain;
+
+    image-rendering: pixelated;
+
+}
+
+.stats {
+
+    display: flex;
+    justify-content: center;
+
+    gap: 50px;
+
+    margin-top: 30px;
+
+    color: #aaa;
+
+}
+
+.stat strong {
+
+    color: white;
+
+    font-size: 20px;
+
+}
+
+.dexGrid {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(5, 1fr);
+
+    gap: 12px;
+
+}
+
+.dexCard {
+
+    background: #1d1d1d;
+
+    border: 1px solid #303030;
+
+    border-radius: 10px;
+
+    padding: 12px;
+
+    text-align: center;
+
+}
+
+.dexCard img {
+
+    width: 90px;
+    height: 90px;
+
+    object-fit: contain;
+
+    image-rendering: pixelated;
+
+}
+
+.dexNumber {
+
+    color: #777;
+
+    font-size: 12px;
+
+}
+
+.dexName {
+
+    margin-top: 5px;
+
+}
+
+.unknown {
+
+    opacity: 0.35;
+
+}
+
+.boxGrid {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(5, 1fr);
+
+    gap: 15px;
+
+}
+
+.boxSlot {
+
+    min-height: 150px;
+
+    background: #1d1d1d;
+
+    border: 1px solid #303030;
+
+    border-radius: 10px;
+
+    text-align: center;
+
+    padding: 10px;
+
+}
+
+.boxSlot img {
+
+    width: 100px;
+    height: 100px;
+
+    object-fit: contain;
+
+    image-rendering: pixelated;
+
+}
+
+.emptySlot {
+
+    color: #555;
+
+    padding-top: 55px;
+
+}
+
+.settings {
 
     max-width: 500px;
 
@@ -1311,61 +702,36 @@ h1 {
 
 }
 
-.pokemon {
+.danger {
 
-    width: 220px;
+    background: #6d2525;
 
-    height: 220px;
-
-    image-rendering: pixelated;
+    border-color: #963636;
 
 }
 
-.level {
+.back {
 
-    font-size: 20px;
-
-}
-
-.message {
-
-    margin: 20px;
-
-    font-size: 18px;
+    margin-bottom: 20px;
 
 }
 
-button {
+@media (max-width: 700px) {
 
-    padding: 14px 30px;
+    .dexGrid,
+    .boxGrid {
 
-    margin: 8px;
+        grid-template-columns:
+            repeat(3, 1fr);
 
-    border-radius: 7px;
+    }
 
-    border: 1px solid #777;
+    .menu {
 
-    background: #333;
+        grid-template-columns:
+            1fr;
 
-    color: white;
-
-    cursor: pointer;
-
-    font-size: 16px;
-
-}
-
-button:hover {
-
-    background: #555;
-
-}
-
-button:disabled {
-
-    opacity: 0.4;
-
-    cursor: default;
+    }
 
 }
 
@@ -1375,119 +741,83 @@ button:disabled {
 
 <body>
 
-<div class="encounter">
+<div class="app">
 
-<h1>
-Wild ${pokemon.name}!
-</h1>
+<div class="header">
 
-<img
-class="pokemon"
-src="${pokemon.image}"
->
-
-<div class="level">
-
-Level ${encounter.level}
-
+<div class="logo">
+PokeCode
 </div>
 
-<div class="message">
+<div class="nav">
 
-${message}
-
-</div>
-
-<button
-id="catchButton"
-onclick="catchPokemon()"
->
-
-CATCH
-
+<button onclick="goHome()">
+Home
 </button>
 
-<button
-id="runButton"
-onclick="runAway()"
->
+<button onclick="openDex()">
+Pokédex
+</button>
 
-RUN
-
+<button onclick="openBox()">
+Box
 </button>
 
 </div>
 
+</div>
+
+${content}
+
+</div>
 
 <script>
 
 const vscode =
     acquireVsCodeApi();
 
+function send(command) {
 
-let finished = false;
-
-
-function disableButtons() {
-
-    finished = true;
-
-    document.getElementById(
-        "catchButton"
-    ).disabled = true;
-
-    document.getElementById(
-        "runButton"
-    ).disabled = true;
+    vscode.postMessage({
+        command: command
+    });
 
 }
 
+function goHome() {
+    send("home");
+}
+
+function openEncounter() {
+    send("encounter");
+}
+
+function openDex() {
+    send("pokedex");
+}
+
+function openBox() {
+    send("box");
+}
+
+function openSettings() {
+    send("settings");
+}
+
+function spawnPokemon() {
+    send("spawn");
+}
 
 function catchPokemon() {
-
-    if (finished) {
-
-        return;
-
-    }
-
-    /*
-     * IMPORTANT:
-     *
-     * The actual catch calculation
-     * happens in extension.ts AFTER
-     * this message is received.
-     */
-
-    disableButtons();
-
-    vscode.postMessage({
-
-        command:
-            "catch"
-
-    });
-
+    send("catch");
 }
 
-
 function runAway() {
+    send("run");
+}
 
-    if (finished) {
-
-        return;
-
-    }
-
-    disableButtons();
-
-    vscode.postMessage({
-
-        command:
-            "run"
-
-    });
-
+function resetGame() {
+    send("reset");
 }
 
 </script>
@@ -1497,78 +827,434 @@ function runAway() {
 </html>
 
 `;
-
 }
 
-
-/* =========================================================
-   POKEMON IMAGE
-   ========================================================= */
-
-function getPokemonImage(
-    id: number
+function getHomeHTML(
+    state: GameState
 ): string {
 
-    const pokemon =
-        POKEMON.find(
-            p => p.id === id
-        );
+    const content = `
 
+<div class="card home">
 
-    if (!pokemon) {
+<img
+    class="homeBall"
+    src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
+>
 
-        return "";
+<h1>
+Welcome to PokeCode
+</h1>
+
+<p>
+Your tiny Pokémon companion inside VS Code.
+</p>
+
+<div class="stats">
+
+<div class="stat">
+
+<strong>
+${state.seen.length}
+</strong>
+
+<br>
+
+Seen
+
+</div>
+
+<div class="stat">
+
+<strong>
+${state.caught.length}
+</strong>
+
+<br>
+
+Caught
+
+</div>
+
+</div>
+
+<div class="menu">
+
+<button
+    class="menuButton primary"
+    onclick="openEncounter()"
+>
+Open Poké Ball
+</button>
+
+<button
+    class="menuButton"
+    onclick="openDex()"
+>
+📖 Pokédex
+</button>
+
+<button
+    class="menuButton"
+    onclick="openBox()"
+>
+📦 Pokémon Box
+</button>
+
+<button
+    class="menuButton"
+    onclick="openSettings()"
+>
+⚙ Settings
+</button>
+
+</div>
+
+</div>
+
+`;
+
+    return getBaseHTML(
+        content,
+        state
+    );
+}
+
+function getEncounterHTML(
+    state: GameState
+): string {
+
+    let content = "";
+
+    if (currentPokemon) {
+
+        content = `
+
+<div class="back">
+
+<button onclick="goHome()">
+← Home
+</button>
+
+</div>
+
+<div class="card encounter">
+
+<img
+    class="pokemonImage"
+    src="${spriteURL(currentPokemon.id)}"
+>
+
+<div class="pokemonName">
+${currentPokemon.name}
+</div>
+
+<div class="type">
+${currentPokemon.type}
+</div>
+
+<div class="actions">
+
+<button
+    class="primary"
+    onclick="catchPokemon()"
+>
+Catch
+</button>
+
+<button onclick="runAway()">
+Run
+</button>
+
+</div>
+
+</div>
+
+`;
+
+    } else {
+
+        content = `
+
+<div class="back">
+
+<button onclick="goHome()">
+← Home
+</button>
+
+</div>
+
+<div class="card empty">
+
+<img
+    class="pokeball"
+    src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
+>
+
+<h2>
+Open the Poké Ball
+</h2>
+
+<p>
+Something may appear...
+</p>
+
+<button
+    class="primary"
+    onclick="spawnPokemon()"
+>
+Open Poké Ball
+</button>
+
+</div>
+
+`;
 
     }
 
-
-    return pokemon.image;
+    return getBaseHTML(
+        content,
+        state
+    );
 }
 
-
-/* =========================================================
-   HTML ESCAPING
-   ========================================================= */
-
-function escapeHTML(
-    text: string
+function getPokedexHTML(
+    state: GameState
 ): string {
 
-    return text
+    let cards = "";
 
-        .replace(
-            /&/g,
-            "&amp;"
-        )
+    for (
+        let id = 1;
+        id <= 151;
+        id++
+    ) {
 
-        .replace(
-            /</g,
-            "&lt;"
-        )
+        const pokemon =
+            pokemonList.find(
+                p => p.id === id
+            );
 
-        .replace(
-            />/g,
-            "&gt;"
-        )
+        if (!pokemon) {
+            continue;
+        }
 
-        .replace(
-            /"/g,
-            "&quot;"
-        )
+        const seen =
+            state.seen.includes(id);
 
-        .replace(
-            /'/g,
-            "&#039;"
-        );
+        cards += `
+
+<div class="dexCard ${
+    seen ? "" : "unknown"
+}">
+
+<img
+    src="${
+        seen
+            ? spriteURL(id)
+            : spriteURL(0)
+    }"
+>
+
+<div class="dexNumber">
+#${String(id).padStart(3, "0")}
+</div>
+
+<div class="dexName">
+
+${
+    seen
+        ? pokemon.name
+        : "???"
 }
 
+</div>
 
-/* =========================================================
-   DEACTIVATE
-   ========================================================= */
+</div>
+
+`;
+    }
+
+    const content = `
+
+<div class="back">
+
+<button onclick="goHome()">
+← Home
+</button>
+
+</div>
+
+<h2>
+Pokédex
+</h2>
+
+<p>
+${state.seen.length} / 151 Pokémon encountered
+</p>
+
+<div class="dexGrid">
+
+${cards}
+
+</div>
+
+`;
+
+    return getBaseHTML(
+        content,
+        state
+    );
+}
+
+function getBoxHTML(
+    state: GameState
+): string {
+
+    let cards = "";
+
+    for (
+        let slot = 0;
+        slot < 30;
+        slot++
+    ) {
+
+        const pokemonId =
+            state.caught[slot];
+
+        if (pokemonId) {
+
+            const pokemon =
+                pokemonList.find(
+                    p => p.id === pokemonId
+                );
+
+            if (pokemon) {
+
+                cards += `
+
+<div class="boxSlot">
+
+<img
+    src="${spriteURL(pokemon.id)}"
+>
+
+<div>
+${pokemon.name}
+</div>
+
+</div>
+
+`;
+
+                continue;
+            }
+        }
+
+        cards += `
+
+<div class="boxSlot">
+
+<div class="emptySlot">
+Empty
+</div>
+
+</div>
+
+`;
+    }
+
+    const content = `
+
+<div class="back">
+
+<button onclick="goHome()">
+← Home
+</button>
+
+</div>
+
+<h2>
+Pokémon Box
+</h2>
+
+<p>
+${state.caught.length} Pokémon stored
+</p>
+
+<div class="boxGrid">
+
+${cards}
+
+</div>
+
+`;
+
+    return getBaseHTML(
+        content,
+        state
+    );
+}
+
+function getSettingsHTML(
+    state: GameState
+): string {
+
+    const content = `
+
+<div class="back">
+
+<button onclick="goHome()">
+← Home
+</button>
+
+</div>
+
+<div class="card settings">
+
+<h2>
+Settings
+</h2>
+
+<p>
+PokeCode currently saves your Pokédex and caught Pokémon automatically.
+</p>
+
+<hr>
+
+<h3>
+Game Data
+</h3>
+
+<p>
+Seen: ${state.seen.length} / 151
+</p>
+
+<p>
+Caught: ${state.caught.length} / 151
+</p>
+
+<br>
+
+<button
+    class="danger"
+    onclick="resetGame()"
+>
+Reset All Data
+</button>
+
+</div>
+
+`;
+
+    return getBaseHTML(
+        content,
+        state
+    );
+}
 
 export function deactivate() {
 
-    gamePanel = undefined;
+    panel = undefined;
 
 }

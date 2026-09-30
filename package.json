@@ -9,17 +9,15 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
         {
-            "command": "poke-code.helloWorld",
-            "title": "PokeCode: Open Game"
-        },
-        {
-            "command": "poke-code.resetGame",
-            "title": "PokeCode: Reset Game"
+            "command": "poke-code.open",
+            "title": "PokeCode: Open"
         }
     ]
   },
