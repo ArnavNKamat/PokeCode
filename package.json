@@ -1,25 +1,42 @@
 {
   "name": "poke-code",
   "displayName": "PokeCode",
-  "description": "A Pokémon mini-game inside VS Code",
+  "description": "A Pokémon companion inside VS Code",
   "version": "0.0.1",
+  "icon": "media/pokeball.png",
   "engines": {
     "vscode": "^1.138.0"
   },
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "poke-code.open",
+        "title": "PokeCode: Open"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
         {
-            "command": "poke-code.open",
-            "title": "PokeCode: Open"
+          "id": "pokeCode",
+          "title": "PokeCode",
+          "icon": "media/pokeball.svg" 
         }
-    ]
+      ]
+    },
+    "views": {
+      "pokeCode": [
+        {
+          "type": "webview",
+          "id": "pokeCode.view",
+          "name": "PokeCode",
+          "icon": "media/pokeball.png"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

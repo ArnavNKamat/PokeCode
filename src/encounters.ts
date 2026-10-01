@@ -2,8 +2,11 @@ import { Pokemon, pokemonList } from "./pokemon";
 
 export function getRandomEncounter(): Pokemon | undefined {
 
-    // 20% chance that nothing appears
-    if (Math.random() < 0.20) {
+    /*
+     * Some attempts produce no encounter.
+     */
+
+    if (Math.random() < 0.25) {
         return undefined;
     }
 
@@ -12,5 +15,7 @@ export function getRandomEncounter(): Pokemon | undefined {
             Math.random() * pokemonList.length
         );
 
-    return pokemonList[index];
+    return {
+        ...pokemonList[index]
+    };
 }

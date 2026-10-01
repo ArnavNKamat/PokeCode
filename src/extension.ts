@@ -1,130 +1,185 @@
 import * as vscode from "vscode";
-
-import { Pokemon, pokemonList } from "./pokemon";
+import { Pokemon } from "./pokemon";
 import { getRandomEncounter } from "./encounters";
+
+const BOX_COUNT = 5;
+const BOX_SIZE = 32;
+
+interface StoredPokemon extends Pokemon {
+    uid: string;
+}
 
 interface GameState {
     seen: number[];
-    caught: number[];
+    caught: StoredPokemon[];
 }
 
-let panel: vscode.WebviewPanel | undefined;
 let currentPokemon: Pokemon | undefined;
 
-type Screen =
-    | "home"
-    | "encounter"
-    | "pokedex"
-    | "box"
-    | "settings";
+let provider: PokeCodeProvider | undefined;
 
-let currentScreen: Screen = "home";
+export function activate(context: vscode.ExtensionContext) {
 
-export function activate(
-    context: vscode.ExtensionContext
-) {
+    provider = new PokeCodeProvider(context);
 
-    const openCommand =
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(
+            "pokeCode.view",
+            provider
+        )
+    );
+
+    const command =
         vscode.commands.registerCommand(
             "poke-code.open",
             () => {
-                openPokeCode(context);
+
+                vscode.commands.executeCommand(
+                    "workbench.view.extension.pokeCode"
+                );
+
             }
         );
 
-    context.subscriptions.push(openCommand);
+    context.subscriptions.push(command);
 }
 
-function openPokeCode(
-    context: vscode.ExtensionContext
-) {
+class PokeCodeProvider
+    implements vscode.WebviewViewProvider {
 
-    if (panel) {
+    private view?: vscode.WebviewView;
 
-        panel.reveal(
-            vscode.ViewColumn.One
+    constructor(
+        private readonly context: vscode.ExtensionContext
+    ) {}
+
+    resolveWebviewView(
+        webviewView: vscode.WebviewView
+    ) {
+
+        this.view = webviewView;
+
+        webviewView.webview.options = {
+            enableScripts: true
+        };
+
+        webviewView.webview.onDidReceiveMessage(
+            async message => {
+
+                switch (message.command) {
+
+                    case "home":
+                        currentPokemon = undefined;
+                        this.update();
+                        break;
+
+                    case "spawn":
+                        spawnPokemon(this.context);
+                        this.update();
+                        break;
+
+                    case "catch":
+                        await catchPokemon(this.context);
+                        this.update();
+                        break;
+
+                    case "run":
+                        currentPokemon = undefined;
+                        this.update();
+                        break;
+
+                    case "boxes":
+                        this.showBoxes();
+                        break;
+
+                    case "release":
+                        await releasePokemon(
+                            this.context,
+                            message.uid
+                        );
+                        this.showBoxes();
+                        break;
+
+                    case "pokedex":
+                        this.showPokedex();
+                        break;
+
+                    case "reset":
+
+                        const answer =
+                            await vscode.window.showWarningMessage(
+                                "Reset all PokeCode data?",
+                                "Reset",
+                                "Cancel"
+                            );
+
+                        if (answer === "Reset") {
+
+                            await this.context.globalState.update(
+                                "pokeCode.gameState",
+                                {
+                                    seen: [],
+                                    caught: []
+                                }
+                            );
+
+                            currentPokemon = undefined;
+
+                            this.showHome();
+                        }
+
+                        break;
+                }
+            }
         );
 
-        updateScreen(context);
-
-        return;
+        this.showHome();
     }
 
-    panel =
-        vscode.window.createWebviewPanel(
-            "pokeCode",
-            "PokeCode",
-            vscode.ViewColumn.One,
-            {
-                enableScripts: true
-            }
-        );
+    private update() {
 
-    panel.onDidDispose(
-        () => {
-
-            panel = undefined;
-            currentPokemon = undefined;
-
+        if (!this.view) {
+            return;
         }
-    );
 
-    panel.webview.onDidReceiveMessage(
-        message => {
+        const state =
+            getGameState(this.context);
 
-            switch (message.command) {
+        this.view.webview.html =
+            getHomeHTML(state, currentPokemon);
+    }
 
-                case "home":
-                    currentScreen = "home";
-                    currentPokemon = undefined;
-                    updateScreen(context);
-                    break;
+    private showHome() {
 
-                case "encounter":
-                    currentScreen = "encounter";
-                    currentPokemon = undefined;
-                    updateScreen(context);
-                    break;
+        currentPokemon = undefined;
+        this.update();
+    }
 
-                case "spawn":
-                    spawnPokemon(context);
-                    break;
+    private showBoxes() {
 
-                case "catch":
-                    catchPokemon(context);
-                    break;
-
-                case "run":
-                    runAway(context);
-                    break;
-
-                case "pokedex":
-                    currentScreen = "pokedex";
-                    currentPokemon = undefined;
-                    updateScreen(context);
-                    break;
-
-                case "box":
-                    currentScreen = "box";
-                    currentPokemon = undefined;
-                    updateScreen(context);
-                    break;
-
-                case "settings":
-                    currentScreen = "settings";
-                    currentPokemon = undefined;
-                    updateScreen(context);
-                    break;
-
-                case "reset":
-                    resetGame(context);
-                    break;
-            }
-
+        if (!this.view) {
+            return;
         }
-    );
 
-    updateScreen(context);
+        const state =
+            getGameState(this.context);
+
+        this.view.webview.html =
+            getBoxesHTML(state);
+    }
+
+    private showPokedex() {
+
+        if (!this.view) {
+            return;
+        }
+
+        const state =
+            getGameState(this.context);
+
+        this.view.webview.html =
+            getPokedexHTML(state);
+    }
 }
 
 function spawnPokemon(
@@ -142,8 +197,6 @@ function spawnPokemon(
             "Nothing appeared..."
         );
 
-        updateScreen(context);
-
         return;
     }
 
@@ -154,20 +207,13 @@ function spawnPokemon(
 
     if (!state.seen.includes(pokemon.id)) {
 
-        state.seen.push(
-            pokemon.id
-        );
+        state.seen.push(pokemon.id);
 
-        saveGameState(
-            context,
-            state
-        );
+        saveGameState(context, state);
     }
-
-    updateScreen(context);
 }
 
-function catchPokemon(
+async function catchPokemon(
     context: vscode.ExtensionContext
 ) {
 
@@ -178,94 +224,112 @@ function catchPokemon(
     const state =
         getGameState(context);
 
-    if (!state.caught.includes(currentPokemon.id)) {
+    if (state.caught.length >= BOX_COUNT * BOX_SIZE) {
 
-        state.caught.push(
-            currentPokemon.id
+        vscode.window.showWarningMessage(
+            "All five Pokémon Boxes are full. Release a Pokémon first."
         );
 
-        saveGameState(
-            context,
-            state
-        );
+        return;
     }
+
+    /*
+     * Catch rate is checked here,
+     * not when the Pokémon appears.
+     */
+
+    const catchRoll =
+        Math.floor(Math.random() * 256);
+
+    if (catchRoll >= currentPokemon.catchRate) {
+
+        vscode.window.showInformationMessage(
+            `${currentPokemon.name} escaped!`
+        );
+
+        currentPokemon = undefined;
+
+        return;
+    }
+
+    const storedPokemon: StoredPokemon = {
+
+        ...currentPokemon,
+
+        uid:
+            `${Date.now()}-${Math.random()
+                .toString(36)
+                .substring(2, 9)}`
+    };
+
+    /*
+     * Every caught Pokémon gets
+     * its own entry.
+     *
+     * Therefore duplicates are allowed.
+     */
+
+    state.caught.push(storedPokemon);
+
+    saveGameState(context, state);
 
     vscode.window.showInformationMessage(
         `${currentPokemon.name} was caught!`
     );
 
     currentPokemon = undefined;
-
-    updateScreen(context);
 }
 
-function runAway(
-    context: vscode.ExtensionContext
+async function releasePokemon(
+    context: vscode.ExtensionContext,
+    uid: string
 ) {
 
-    if (!currentPokemon) {
+    const state =
+        getGameState(context);
+
+    const index =
+        state.caught.findIndex(
+            pokemon => pokemon.uid === uid
+        );
+
+    if (index === -1) {
         return;
     }
 
-    vscode.window.showInformationMessage(
-        `${currentPokemon.name} ran away!`
-    );
+    const pokemon =
+        state.caught[index];
 
-    currentPokemon = undefined;
+    const answer =
+        await vscode.window.showWarningMessage(
+            `Release ${pokemon.name}?`,
+            "Release",
+            "Cancel"
+        );
 
-    updateScreen(context);
-}
+    if (answer !== "Release") {
+        return;
+    }
 
-function resetGame(
-    context: vscode.ExtensionContext
-) {
+    state.caught.splice(index, 1);
 
-    const state: GameState = {
-        seen: [],
-        caught: []
-    };
-
-    saveGameState(
+    await saveGameState(
         context,
         state
     );
-
-    currentPokemon = undefined;
-    currentScreen = "home";
-
-    vscode.window.showInformationMessage(
-        "PokeCode data has been reset."
-    );
-
-    updateScreen(context);
 }
 
 function getGameState(
     context: vscode.ExtensionContext
 ): GameState {
 
-    const saved =
-        context.globalState.get<GameState>(
-            "pokeCode.gameState"
-        );
-
-    if (!saved) {
-
-        return {
+    return context.globalState.get<GameState>(
+        "pokeCode.gameState",
+        {
             seen: [],
             caught: []
-        };
-    }
-
-    return {
-        seen: Array.isArray(saved.seen)
-            ? saved.seen
-            : [],
-
-        caught: Array.isArray(saved.caught)
-            ? saved.caught
-            : []
-    };
+        }
+    );
 }
 
 function saveGameState(
@@ -273,79 +337,315 @@ function saveGameState(
     state: GameState
 ) {
 
-    void context.globalState.update(
+    return context.globalState.update(
         "pokeCode.gameState",
         state
     );
 }
 
-function updateScreen(
-    context: vscode.ExtensionContext
-) {
-
-    if (!panel) {
-        return;
-    }
-
-    const state =
-        getGameState(context);
-
-    panel.webview.html =
-        getHTML(
-            context,
-            state
-        );
-}
-
-function spriteURL(
+function getSpriteURL(
     id: number
 ): string {
 
-    return (
-        "https://raw.githubusercontent.com/" +
-        "PokeAPI/sprites/master/sprites/pokemon/" +
-        `${id}.png`
+    /*
+     * Transparent official-style sprite.
+     */
+
+    return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
+}
+
+function getHomeHTML(
+    state: GameState,
+    pokemon?: Pokemon
+): string {
+
+    let content = "";
+
+    if (pokemon) {
+
+        content = `
+
+        <div class="encounter">
+
+            <img
+                src="${getSpriteURL(pokemon.id)}"
+                class="pokemon"
+            >
+
+            <h2>${pokemon.name}</h2>
+
+            <p>${pokemon.type}</p>
+
+            <button onclick="send('catch')">
+                Catch
+            </button>
+
+            <button onclick="send('run')">
+                Run
+            </button>
+
+        </div>
+
+        `;
+
+    } else {
+
+        content = `
+
+        <div class="homeBall">
+
+            <img
+                src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
+                class="pokeball"
+                onclick="send('spawn')"
+            >
+
+            <h2>Open Poké Ball</h2>
+
+            <p>
+                Click the Poké Ball to look for a Pokémon.
+            </p>
+
+        </div>
+
+        `;
+    }
+
+    return page(
+
+        "PokeCode",
+
+        `
+
+        ${content}
+
+        <div class="stats">
+
+            <div>
+                <b>${state.seen.length}</b>
+                <small>Seen</small>
+            </div>
+
+            <div>
+                <b>${state.caught.length}</b>
+                <small>Caught</small>
+            </div>
+
+            <div>
+                <b>${BOX_COUNT * BOX_SIZE}</b>
+                <small>Slots</small>
+            </div>
+
+        </div>
+
+        <div class="menu">
+
+            <button onclick="send('boxes')">
+                📦 Boxes
+            </button>
+
+            <button onclick="send('pokedex')">
+                📖 Pokédex
+            </button>
+
+        </div>
+
+        <button
+            class="reset"
+            onclick="send('reset')"
+        >
+            Reset Data
+        </button>
+
+        `
     );
 }
 
-function getHTML(
-    context: vscode.ExtensionContext,
+function getBoxesHTML(
     state: GameState
 ): string {
 
-    switch (currentScreen) {
+    let boxes = "";
 
-        case "encounter":
-            return getEncounterHTML(
-                state
+    for (
+        let boxNumber = 0;
+        boxNumber < BOX_COUNT;
+        boxNumber++
+    ) {
+
+        const start =
+            boxNumber * BOX_SIZE;
+
+        const pokemonInBox =
+            state.caught.slice(
+                start,
+                start + BOX_SIZE
             );
 
-        case "pokedex":
-            return getPokedexHTML(
-                state
-            );
+        let slots = "";
 
-        case "box":
-            return getBoxHTML(
-                state
-            );
+        for (
+            let slot = 0;
+            slot < BOX_SIZE;
+            slot++
+        ) {
 
-        case "settings":
-            return getSettingsHTML(
-                state
-            );
+            const pokemon =
+                pokemonInBox[slot];
 
-        case "home":
-        default:
-            return getHomeHTML(
-                state
-            );
+            if (pokemon) {
+
+                slots += `
+
+                <div class="slot">
+
+                    <img
+                        src="${getSpriteURL(pokemon.id)}"
+                    >
+
+                    <span>
+                        ${pokemon.name}
+                    </span>
+
+                    <button
+                        class="release"
+                        onclick="releasePokemon('${pokemon.uid}')"
+                    >
+                        Release
+                    </button>
+
+                </div>
+
+                `;
+
+            } else {
+
+                slots += `
+
+                <div class="slot emptySlot">
+                    Empty
+                </div>
+
+                `;
+            }
+        }
+
+        boxes += `
+
+        <h3>
+            Box ${boxNumber + 1}
+        </h3>
+
+        <div class="box">
+            ${slots}
+        </div>
+
+        `;
     }
+
+    return page(
+
+        "Pokémon Boxes",
+
+        `
+
+        <button onclick="send('home')">
+            ← Home
+        </button>
+
+        <p>
+            ${state.caught.length}
+            / ${BOX_COUNT * BOX_SIZE}
+            Pokémon stored
+        </p>
+
+        ${boxes}
+
+        `
+    );
 }
 
-function getBaseHTML(
-    content: string,
+function getPokedexHTML(
     state: GameState
+): string {
+
+    let entries = "";
+
+    for (let i = 1; i <= 151; i++) {
+
+        if (state.seen.includes(i)) {
+
+            entries += `
+
+            <div class="dexEntry">
+
+                <img src="${getSpriteURL(i)}">
+
+                <span>
+                    #${String(i).padStart(3, "0")}
+                </span>
+
+                <b>
+                    ${getPokemonName(i)}
+                </b>
+
+            </div>
+
+            `;
+
+        }
+    }
+
+    return page(
+
+        "Pokédex",
+
+        `
+
+        <button onclick="send('home')">
+            ← Home
+        </button>
+
+        <p>
+            Seen ${state.seen.length} / 151
+        </p>
+
+        <div class="dex">
+            ${entries || "<p>No Pokémon seen yet.</p>"}
+        </div>
+
+        `
+    );
+}
+
+function getPokemonName(
+    id: number
+): string {
+
+    /*
+     * The encounter data already contains
+     * Pokémon names. This fallback is only
+     * for Pokédex entries.
+     */
+
+    const names = [
+        "Bulbasaur",
+        "Ivysaur",
+        "Venusaur",
+        "Charmander",
+        "Charmeleon",
+        "Charizard",
+        "Squirtle",
+        "Wartortle",
+        "Blastoise"
+    ];
+
+    return names[id - 1] || `Pokémon #${id}`;
+}
+
+function page(
+    title: string,
+    content: string
 ): string {
 
     return `
@@ -360,379 +660,162 @@ function getBaseHTML(
 
 <style>
 
-* {
-    box-sizing: border-box;
-}
-
 body {
-
-    background: #111;
-    color: white;
-
-    font-family:
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        Arial,
-        sans-serif;
-
-    margin: 0;
-    padding: 0;
-
+    color: var(--vscode-foreground);
+    background: var(--vscode-sideBar-background);
+    font-family: var(--vscode-font-family);
+    padding: 12px;
 }
 
-.app {
-
-    max-width: 900px;
-    margin: auto;
-
-    padding: 30px;
-
+h1 {
+    text-align: center;
+    margin-bottom: 20px;
 }
 
-.header {
-
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    margin-bottom: 25px;
-
-}
-
-.logo {
-
-    font-size: 24px;
-    font-weight: bold;
-
-    color: #f5d742;
-
-}
-
-.nav {
-
-    display: flex;
-    gap: 8px;
-
-}
-
-.nav button {
-
-    padding: 7px 12px;
-    font-size: 13px;
-
+h2,
+h3 {
+    text-align: center;
 }
 
 button {
-
-    background: #292929;
-    color: white;
-
-    border: 1px solid #555;
-
-    border-radius: 7px;
-
-    padding: 11px 20px;
-
+    width: 100%;
+    padding: 8px;
+    margin: 4px 0;
+    border: none;
+    border-radius: 5px;
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
     cursor: pointer;
-
-    font-size: 15px;
-
 }
 
 button:hover {
-
-    background: #3b3b3b;
-
-}
-
-.primary {
-
-    background: #d83b3b;
-    border-color: #e35b5b;
-
-}
-
-.primary:hover {
-
-    background: #ec4b4b;
-
-}
-
-.card {
-
-    background: #1d1d1d;
-
-    border: 1px solid #303030;
-
-    border-radius: 14px;
-
-    padding: 25px;
-
-}
-
-.home {
-
-    text-align: center;
-
-    padding: 50px 20px;
-
+    background: var(--vscode-button-hoverBackground);
 }
 
 .homeBall {
-
-    width: 130px;
-    height: 130px;
-
-    object-fit: contain;
-
-    image-rendering: pixelated;
-
-    margin-bottom: 15px;
-
-}
-
-.menu {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(2, 1fr);
-
-    gap: 15px;
-
-    margin-top: 30px;
-
-}
-
-.menuButton {
-
-    padding: 25px;
-
-    font-size: 17px;
-
-}
-
-.encounter {
-
     text-align: center;
-
-    padding: 35px;
-
-}
-
-.pokemonImage {
-
-    width: 220px;
-    height: 220px;
-
-    object-fit: contain;
-
-    image-rendering: pixelated;
-
-}
-
-.pokemonName {
-
-    font-size: 28px;
-
-    margin: 10px 0;
-
-}
-
-.type {
-
-    color: #aaa;
-
-}
-
-.actions {
-
-    margin-top: 20px;
-
-}
-
-.empty {
-
-    text-align: center;
-
-    padding: 50px;
-
+    padding: 25px 0;
 }
 
 .pokeball {
-
-    width: 100px;
-    height: 100px;
-
-    object-fit: contain;
-
+    width: 90px;
+    cursor: pointer;
     image-rendering: pixelated;
+    transition: transform 0.2s;
+}
 
+.pokeball:hover {
+    transform: scale(1.1);
+}
+
+.encounter {
+    text-align: center;
+    padding: 15px;
+}
+
+.pokemon {
+    width: 150px;
+    height: 150px;
+    object-fit: contain;
+    image-rendering: pixelated;
 }
 
 .stats {
-
     display: flex;
-    justify-content: center;
-
-    gap: 50px;
-
-    margin-top: 30px;
-
-    color: #aaa;
-
+    gap: 5px;
+    margin: 15px 0;
 }
 
-.stat strong {
-
-    color: white;
-
-    font-size: 20px;
-
-}
-
-.dexGrid {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(5, 1fr);
-
-    gap: 12px;
-
-}
-
-.dexCard {
-
-    background: #1d1d1d;
-
-    border: 1px solid #303030;
-
-    border-radius: 10px;
-
-    padding: 12px;
-
+.stats div {
+    flex: 1;
     text-align: center;
-
+    background: var(--vscode-editor-background);
+    padding: 8px;
+    border-radius: 5px;
 }
 
-.dexCard img {
-
-    width: 90px;
-    height: 90px;
-
-    object-fit: contain;
-
-    image-rendering: pixelated;
-
+.stats b,
+.stats small {
+    display: block;
 }
 
-.dexNumber {
-
-    color: #777;
-
-    font-size: 12px;
-
+.menu {
+    margin-top: 15px;
 }
 
-.dexName {
-
-    margin-top: 5px;
-
+.reset {
+    margin-top: 20px;
+    opacity: 0.7;
 }
 
-.unknown {
-
-    opacity: 0.35;
-
-}
-
-.boxGrid {
-
+.box {
     display: grid;
-
-    grid-template-columns:
-        repeat(5, 1fr);
-
-    gap: 15px;
-
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    margin-bottom: 20px;
 }
 
-.boxSlot {
-
-    min-height: 150px;
-
-    background: #1d1d1d;
-
-    border: 1px solid #303030;
-
-    border-radius: 10px;
-
+.slot {
+    min-height: 75px;
+    background: var(--vscode-editor-background);
+    border-radius: 4px;
     text-align: center;
-
-    padding: 10px;
-
+    padding: 3px;
+    overflow: hidden;
 }
 
-.boxSlot img {
-
-    width: 100px;
-    height: 100px;
-
+.slot img {
+    width: 42px;
+    height: 42px;
     object-fit: contain;
-
     image-rendering: pixelated;
+}
 
+.slot span {
+    display: block;
+    font-size: 9px;
+    overflow: hidden;
+    white-space: nowrap;
 }
 
 .emptySlot {
-
-    color: #555;
-
-    padding-top: 55px;
-
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    opacity: 0.4;
 }
 
-.settings {
-
-    max-width: 500px;
-
-    margin: auto;
-
+.release {
+    font-size: 8px;
+    padding: 2px;
+    margin: 2px 0 0;
 }
 
-.danger {
-
-    background: #6d2525;
-
-    border-color: #963636;
-
+.dex {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
-.back {
-
-    margin-bottom: 20px;
-
+.dexEntry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--vscode-editor-background);
+    padding: 5px;
+    border-radius: 4px;
 }
 
-@media (max-width: 700px) {
+.dexEntry img {
+    width: 40px;
+    height: 40px;
+    image-rendering: pixelated;
+}
 
-    .dexGrid,
-    .boxGrid {
-
-        grid-template-columns:
-            repeat(3, 1fr);
-
-    }
-
-    .menu {
-
-        grid-template-columns:
-            1fr;
-
-    }
-
+.dexEntry span {
+    opacity: 0.6;
+    font-size: 11px;
 }
 
 </style>
@@ -741,40 +824,13 @@ button:hover {
 
 <body>
 
-<div class="app">
-
-<div class="header">
-
-<div class="logo">
-PokeCode
-</div>
-
-<div class="nav">
-
-<button onclick="goHome()">
-Home
-</button>
-
-<button onclick="openDex()">
-Pokédex
-</button>
-
-<button onclick="openBox()">
-Box
-</button>
-
-</div>
-
-</div>
+<h1>${title}</h1>
 
 ${content}
 
-</div>
-
 <script>
 
-const vscode =
-    acquireVsCodeApi();
+const vscode = acquireVsCodeApi();
 
 function send(command) {
 
@@ -784,40 +840,13 @@ function send(command) {
 
 }
 
-function goHome() {
-    send("home");
-}
+function releasePokemon(uid) {
 
-function openEncounter() {
-    send("encounter");
-}
+    vscode.postMessage({
+        command: "release",
+        uid: uid
+    });
 
-function openDex() {
-    send("pokedex");
-}
-
-function openBox() {
-    send("box");
-}
-
-function openSettings() {
-    send("settings");
-}
-
-function spawnPokemon() {
-    send("spawn");
-}
-
-function catchPokemon() {
-    send("catch");
-}
-
-function runAway() {
-    send("run");
-}
-
-function resetGame() {
-    send("reset");
 }
 
 </script>
@@ -829,432 +858,9 @@ function resetGame() {
 `;
 }
 
-function getHomeHTML(
-    state: GameState
-): string {
-
-    const content = `
-
-<div class="card home">
-
-<img
-    class="homeBall"
-    src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
->
-
-<h1>
-Welcome to PokeCode
-</h1>
-
-<p>
-Your tiny Pokémon companion inside VS Code.
-</p>
-
-<div class="stats">
-
-<div class="stat">
-
-<strong>
-${state.seen.length}
-</strong>
-
-<br>
-
-Seen
-
-</div>
-
-<div class="stat">
-
-<strong>
-${state.caught.length}
-</strong>
-
-<br>
-
-Caught
-
-</div>
-
-</div>
-
-<div class="menu">
-
-<button
-    class="menuButton primary"
-    onclick="openEncounter()"
->
-Open Poké Ball
-</button>
-
-<button
-    class="menuButton"
-    onclick="openDex()"
->
-📖 Pokédex
-</button>
-
-<button
-    class="menuButton"
-    onclick="openBox()"
->
-📦 Pokémon Box
-</button>
-
-<button
-    class="menuButton"
-    onclick="openSettings()"
->
-⚙ Settings
-</button>
-
-</div>
-
-</div>
-
-`;
-
-    return getBaseHTML(
-        content,
-        state
-    );
-}
-
-function getEncounterHTML(
-    state: GameState
-): string {
-
-    let content = "";
-
-    if (currentPokemon) {
-
-        content = `
-
-<div class="back">
-
-<button onclick="goHome()">
-← Home
-</button>
-
-</div>
-
-<div class="card encounter">
-
-<img
-    class="pokemonImage"
-    src="${spriteURL(currentPokemon.id)}"
->
-
-<div class="pokemonName">
-${currentPokemon.name}
-</div>
-
-<div class="type">
-${currentPokemon.type}
-</div>
-
-<div class="actions">
-
-<button
-    class="primary"
-    onclick="catchPokemon()"
->
-Catch
-</button>
-
-<button onclick="runAway()">
-Run
-</button>
-
-</div>
-
-</div>
-
-`;
-
-    } else {
-
-        content = `
-
-<div class="back">
-
-<button onclick="goHome()">
-← Home
-</button>
-
-</div>
-
-<div class="card empty">
-
-<img
-    class="pokeball"
-    src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png"
->
-
-<h2>
-Open the Poké Ball
-</h2>
-
-<p>
-Something may appear...
-</p>
-
-<button
-    class="primary"
-    onclick="spawnPokemon()"
->
-Open Poké Ball
-</button>
-
-</div>
-
-`;
-
-    }
-
-    return getBaseHTML(
-        content,
-        state
-    );
-}
-
-function getPokedexHTML(
-    state: GameState
-): string {
-
-    let cards = "";
-
-    for (
-        let id = 1;
-        id <= 151;
-        id++
-    ) {
-
-        const pokemon =
-            pokemonList.find(
-                p => p.id === id
-            );
-
-        if (!pokemon) {
-            continue;
-        }
-
-        const seen =
-            state.seen.includes(id);
-
-        cards += `
-
-<div class="dexCard ${
-    seen ? "" : "unknown"
-}">
-
-<img
-    src="${
-        seen
-            ? spriteURL(id)
-            : spriteURL(0)
-    }"
->
-
-<div class="dexNumber">
-#${String(id).padStart(3, "0")}
-</div>
-
-<div class="dexName">
-
-${
-    seen
-        ? pokemon.name
-        : "???"
-}
-
-</div>
-
-</div>
-
-`;
-    }
-
-    const content = `
-
-<div class="back">
-
-<button onclick="goHome()">
-← Home
-</button>
-
-</div>
-
-<h2>
-Pokédex
-</h2>
-
-<p>
-${state.seen.length} / 151 Pokémon encountered
-</p>
-
-<div class="dexGrid">
-
-${cards}
-
-</div>
-
-`;
-
-    return getBaseHTML(
-        content,
-        state
-    );
-}
-
-function getBoxHTML(
-    state: GameState
-): string {
-
-    let cards = "";
-
-    for (
-        let slot = 0;
-        slot < 30;
-        slot++
-    ) {
-
-        const pokemonId =
-            state.caught[slot];
-
-        if (pokemonId) {
-
-            const pokemon =
-                pokemonList.find(
-                    p => p.id === pokemonId
-                );
-
-            if (pokemon) {
-
-                cards += `
-
-<div class="boxSlot">
-
-<img
-    src="${spriteURL(pokemon.id)}"
->
-
-<div>
-${pokemon.name}
-</div>
-
-</div>
-
-`;
-
-                continue;
-            }
-        }
-
-        cards += `
-
-<div class="boxSlot">
-
-<div class="emptySlot">
-Empty
-</div>
-
-</div>
-
-`;
-    }
-
-    const content = `
-
-<div class="back">
-
-<button onclick="goHome()">
-← Home
-</button>
-
-</div>
-
-<h2>
-Pokémon Box
-</h2>
-
-<p>
-${state.caught.length} Pokémon stored
-</p>
-
-<div class="boxGrid">
-
-${cards}
-
-</div>
-
-`;
-
-    return getBaseHTML(
-        content,
-        state
-    );
-}
-
-function getSettingsHTML(
-    state: GameState
-): string {
-
-    const content = `
-
-<div class="back">
-
-<button onclick="goHome()">
-← Home
-</button>
-
-</div>
-
-<div class="card settings">
-
-<h2>
-Settings
-</h2>
-
-<p>
-PokeCode currently saves your Pokédex and caught Pokémon automatically.
-</p>
-
-<hr>
-
-<h3>
-Game Data
-</h3>
-
-<p>
-Seen: ${state.seen.length} / 151
-</p>
-
-<p>
-Caught: ${state.caught.length} / 151
-</p>
-
-<br>
-
-<button
-    class="danger"
-    onclick="resetGame()"
->
-Reset All Data
-</button>
-
-</div>
-
-`;
-
-    return getBaseHTML(
-        content,
-        state
-    );
-}
-
 export function deactivate() {
 
-    panel = undefined;
+    currentPokemon = undefined;
+    provider = undefined;
 
 }
