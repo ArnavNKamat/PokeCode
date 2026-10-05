@@ -14,6 +14,77 @@ interface StoredPokemon extends Pokemon {
 interface GameState {
     seen: string[];
     caught: StoredPokemon[];
+    achievements: AchievementProgress;
+}
+
+interface AchievementProgress {
+    totalCaught: number;
+    caughtSpecies: string[];
+    unlocked: string[];
+}
+
+interface AchievementStatus {
+    id: string;
+    title: string;
+    description: string;
+    progress: number;
+    target: number;
+    unlocked: boolean;
+}
+
+type AchievementMetric = "catches" | "species" | "legendaries" | "mew";
+
+const LEGENDARY_IDS = ["0144", "0145", "0146", "0150"];
+const ACHIEVEMENTS: Array<{
+    id: string;
+    title: string;
+    description: string;
+    target: number;
+    metric: AchievementMetric;
+}> = [
+    { id: "catch-1", title: "First Catch", description: "Catch your first Pokemon.", target: 1, metric: "catches" },
+    { id: "catch-10", title: "Getting Started", description: "Catch 10 Pokemon.", target: 10, metric: "catches" },
+    { id: "catch-100", title: "Dedicated Trainer", description: "Catch 100 Pokemon.", target: 100, metric: "catches" },
+    { id: "catch-1000", title: "Master Collector", description: "Catch 1,000 Pokemon.", target: 1000, metric: "catches" },
+    { id: "species-10", title: "Growing Collection", description: "Catch 10 different species.", target: 10, metric: "species" },
+    { id: "species-50", title: "Kanto Specialist", description: "Catch 50 different species.", target: 50, metric: "species" },
+    { id: "species-151", title: "Kanto Complete", description: "Catch all 151 Kanto species.", target: 151, metric: "species" },
+    { id: "legendary-first", title: "Legendary Encounter", description: "Catch one of Kanto's Legendary Pokemon.", target: 1, metric: "legendaries" },
+    { id: "legendary-all", title: "Legendary Quartet", description: "Catch all four Kanto Legendary Pokemon.", target: 4, metric: "legendaries" },
+    { id: "mew", title: "Mythical Discovery", description: "Catch Mew.", target: 1, metric: "mew" }
+];
+
+export function getAchievementStatuses(
+    totalCaught: number,
+    caughtSpecies: string[]
+): AchievementStatus[] {
+    const species = new Set(caughtSpecies);
+    const legendaryCount = LEGENDARY_IDS.filter(id => species.has(id)).length;
+
+    return ACHIEVEMENTS.map(achievement => {
+        let progress = 0;
+
+        switch (achievement.metric) {
+            case "catches":
+                progress = totalCaught;
+                break;
+            case "species":
+                progress = species.size;
+                break;
+            case "legendaries":
+                progress = legendaryCount;
+                break;
+            case "mew":
+                progress = species.has("0151") ? 1 : 0;
+                break;
+        }
+
+        return {
+            ...achievement,
+            progress: Math.min(progress, achievement.target),
+            unlocked: progress >= achievement.target
+        };
+    });
 }
 
 let currentPokemon: Pokemon | undefined;
@@ -73,7 +144,12 @@ export function activate(context: vscode.ExtensionContext) {
                     "pokeCode.gameState",
                     {
                         seen: [],
-                        caught: []
+                                caught: [],
+                                achievements: {
+                                    totalCaught: 0,
+                                    caughtSpecies: [],
+                                    unlocked: []
+                                }
                     }
                 );
 
@@ -171,8 +247,16 @@ class PokeCodeProvider
                         this.showPokedex();
                         break;
 
+                    case "achievements":
+                        this.showAchievements();
+                        break;
+
                     case "settings":
                         this.showSettings();
+                        break;
+
+                    case "credits":
+                        this.showCredits();
                         break;
 
                     case "reset":
@@ -273,6 +357,15 @@ class PokeCodeProvider
         );
     }
 
+    private showAchievements() {
+        if (!this.view) {
+            return;
+        }
+
+        const state = getGameState(this.context);
+        this.render(getAchievementsHTML(state));
+    }
+
     private showSettings() {
 
         if (!this.view) {
@@ -280,6 +373,14 @@ class PokeCodeProvider
         }
 
         this.render(getSettingsHTML());
+    }
+
+    private showCredits() {
+        if (!this.view) {
+            return;
+        }
+
+        this.render(getCreditsHTML());
     }
 
     private render(html: string) {
@@ -373,6 +474,7 @@ async function catchPokemon(
     });
 
     const resolvedName = resolveNickname(currentPokemon, inputName);
+    const previousUnlocks = new Set(state.achievements.unlocked);
 
     const storedPokemon: StoredPokemon = {
 
@@ -390,12 +492,34 @@ async function catchPokemon(
     };
 
     state.caught.push(storedPokemon);
+    state.achievements.totalCaught += 1;
+    state.achievements.caughtSpecies = [...new Set([
+        ...state.achievements.caughtSpecies,
+        currentPokemon.id
+    ])];
+
+    const statuses = getAchievementStatuses(
+        state.achievements.totalCaught,
+        state.achievements.caughtSpecies
+    );
+    const newlyUnlocked = statuses.filter(
+        achievement => achievement.unlocked && !previousUnlocks.has(achievement.id)
+    );
+    state.achievements.unlocked = statuses
+        .filter(achievement => achievement.unlocked)
+        .map(achievement => achievement.id);
 
     await saveGameState(context, state);
 
-    vscode.window.showInformationMessage(
-        `${getPokemonDisplayName(storedPokemon)} was caught!`
-    );
+    if (newlyUnlocked.length > 0) {
+        vscode.window.showInformationMessage(
+            `${getPokemonDisplayName(storedPokemon)} was caught! Achievement unlocked: ${newlyUnlocked.map(achievement => achievement.title).join(", ")}`
+        );
+    } else {
+        vscode.window.showInformationMessage(
+            `${getPokemonDisplayName(storedPokemon)} was caught!`
+        );
+    }
 
     currentPokemon = undefined;
 }
@@ -523,6 +647,21 @@ function normalizeGameState(state?: Partial<GameState>): GameState {
             .filter((pokemon): pokemon is StoredPokemon => !!pokemon && typeof pokemon === "object")
             .slice(0, BOX_COUNT * BOX_SIZE)
         : [];
+    const savedAchievements = state?.achievements;
+    const savedTotalCaught = savedAchievements?.totalCaught;
+    const totalCaught = Math.max(
+        caught.length,
+        typeof savedTotalCaught === "number" && Number.isInteger(savedTotalCaught)
+            ? savedTotalCaught
+            : 0
+    );
+    const caughtSpecies = [...new Set([
+        ...(Array.isArray(savedAchievements?.caughtSpecies) ? savedAchievements.caughtSpecies : []),
+        ...caught.map(pokemon => pokemon.id)
+    ])];
+    const unlocked = getAchievementStatuses(totalCaught, caughtSpecies)
+        .filter(achievement => achievement.unlocked)
+        .map(achievement => achievement.id);
 
     const occupied = new Set<number>();
 
@@ -555,7 +694,12 @@ function normalizeGameState(state?: Partial<GameState>): GameState {
 
     return {
         seen,
-        caught
+        caught,
+        achievements: {
+            totalCaught,
+            caughtSpecies,
+            unlocked
+        }
     };
 }
 
@@ -567,7 +711,12 @@ function getGameState(
         "pokeCode.gameState",
         {
             seen: [],
-            caught: []
+            caught: [],
+            achievements: {
+                totalCaught: 0,
+                caughtSpecies: [],
+                unlocked: []
+            }
         }
     );
 
@@ -598,7 +747,12 @@ async function resetAllData(
         "pokeCode.gameState",
         {
             seen: [],
-            caught: []
+            caught: [],
+            achievements: {
+                totalCaught: 0,
+                caughtSpecies: [],
+                unlocked: []
+            }
         }
     );
 
@@ -715,15 +869,23 @@ function getHomeHTML(
         <div class="menu">
 
             <button onclick="send('boxes')">
-                📦 Boxes
+                <span class="menuIcon" aria-hidden="true" style="--menu-icon: url('${getMediaURL(webview, extensionUri, "nav-boxes.png")}')"></span>
+                <span>Boxes</span>
             </button>
 
             <button onclick="send('pokedex')">
-                📖 Pokédex
+                <span class="menuIcon" aria-hidden="true" style="--menu-icon: url('${getMediaURL(webview, extensionUri, "nav-pokedex.png")}')"></span>
+                <span>Pokédex</span>
+            </button>
+
+            <button onclick="send('achievements')">
+                <span class="menuIcon" aria-hidden="true" style="--menu-icon: url('${getMediaURL(webview, extensionUri, "nav-achievements.png")}')"></span>
+                <span>Achievements</span>
             </button>
 
             <button onclick="send('settings')">
-                ⚙️ Settings
+                <span class="menuIcon" aria-hidden="true" style="--menu-icon: url('${getMediaURL(webview, extensionUri, "nav-settings.png")}')"></span>
+                <span>Settings</span>
             </button>
 
         </div>
@@ -911,9 +1073,70 @@ function getSettingsHTML(): string {
             ← Home
         </button>
 
+        <button onclick="send('credits')">
+            Credits
+        </button>
+
         <button class="reset" onclick="send('reset')">
             Reset Data
         </button>
+        `
+    );
+}
+
+function getCreditsHTML(): string {
+    return page(
+        "Credits",
+        `
+        <button onclick="send('settings')">
+            ← Settings
+        </button>
+
+        <section class="credits">
+            <h2>Developer</h2>
+            <p><a href="https://github.com/ArnavNkamat">GitHub: ArnavNkamat</a></p>
+
+            <h2>Pokémon</h2>
+            <p>Pokémon names, characters, and related trademarks belong to Nintendo, Creatures Inc., GAME FREAK inc., and The Pokémon Company. PokeCode is an unofficial fan project and is not affiliated with or endorsed by them.</p>
+            <p>Generation I catch-rate values are based on Pokémon Red and Blue.</p>
+            <p>Bundled Pokémon sprites are sourced from the <a href="https://github.com/PokeAPI/sprites">PokeAPI sprites repository</a>.</p>
+
+            <h2>Interface Icons</h2>
+            <p>Navigation icons are from <a href="https://github.com/google/material-design-icons">Google Material Design Icons</a>, licensed under Apache 2.0.</p>
+        </section>
+        `
+    );
+}
+
+function getAchievementsHTML(state: GameState): string {
+    const achievements = getAchievementStatuses(
+        state.achievements.totalCaught,
+        state.achievements.caughtSpecies
+    );
+    const unlockedCount = achievements.filter(achievement => achievement.unlocked).length;
+    const entries = achievements.map(achievement => `
+        <div class="achievement ${achievement.unlocked ? "unlocked" : ""}">
+            <div class="achievementHeading">
+                <b>${achievement.title}</b>
+                <span>${achievement.unlocked ? "Unlocked" : achievement.progress + " / " + achievement.target}</span>
+            </div>
+            <p>${achievement.description}</p>
+            <progress value="${achievement.progress}" max="${achievement.target}" aria-label="${achievement.title} progress"></progress>
+        </div>
+    `).join("");
+
+    return page(
+        "Achievements",
+        `
+        <button onclick="send('home')">
+            ← Home
+        </button>
+
+        <p>${unlockedCount} / ${achievements.length} unlocked</p>
+
+        <div class="achievementList">
+            ${entries}
+        </div>
         `
     );
 }
@@ -947,7 +1170,6 @@ h1 {
     margin-bottom: 20px;
 }
 
-h2,
 h3 {
     text-align: center;
 }
@@ -1016,6 +1238,22 @@ button:hover {
 
 .menu {
     margin-top: 15px;
+}
+
+.menu button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-align: left;
+}
+
+.menuIcon {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    background-color: var(--vscode-foreground);
+    -webkit-mask: var(--menu-icon) center / contain no-repeat;
+    mask: var(--menu-icon) center / contain no-repeat;
 }
 
 .reset {
@@ -1107,6 +1345,50 @@ button:hover {
 .moveStatus {
     padding: 8px;
     background: var(--vscode-editor-background);
+}
+
+.achievementList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.achievement {
+    padding: 10px;
+    background: var(--vscode-editor-background);
+    border-left: 3px solid var(--vscode-disabledForeground);
+}
+
+.achievement.unlocked {
+    border-left-color: var(--vscode-testing-iconPassed);
+}
+
+.achievementHeading {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.achievementHeading span {
+    opacity: 0.7;
+    white-space: nowrap;
+}
+
+.achievement p {
+    margin: 6px 0;
+}
+
+.achievement progress {
+    width: 100%;
+    height: 8px;
+}
+
+.credits {
+    line-height: 1.45;
+}
+
+.credits a {
+    color: var(--vscode-textLink-foreground);
 }
 
 .dex {
