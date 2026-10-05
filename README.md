@@ -1,69 +1,46 @@
-# poke-code README
+# PokeCode
 
-This is the README for your extension "poke-code". After writing up a brief description, we recommend including the following sections.
+PokeCode is an unofficial Pokemon-catching companion that lives in the Visual Studio Code Activity Bar. Find Pokemon, build your collection, and organize them without leaving your editor.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- Encounter all 151 original Kanto Pokemon.
+- Catch attempts use a Generation I-inspired catch calculation.
+- Give newly caught Pokemon a nickname, or keep their species name.
+- Track discoveries in the Pokedex and view caught Pokemon in five boxes of 32 slots each.
+- Move Pokemon between positions and boxes. Moving onto an occupied position swaps the two Pokemon.
+- Keep progress between VS Code sessions.
 
-For example if there is an image subfolder under your extension project workspace:
+## Get Started
 
-\!\[feature X\]\(images/feature-x.png\)
+Open the **PokeCode** view from the Activity Bar. Select the Pokeball to search for a Pokemon. When one appears, choose **Catch** or **Run**. After a successful catch, enter a nickname or leave the species name unchanged.
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+Use **Boxes** to browse and organize your collection, **Pokedex** to review discoveries, and **Settings** to reset progress. Reset requires two confirmations.
 
-## Requirements
+You can also run **PokeCode: Open** or **PokeCode: Reset Data** from the Command Palette.
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+## Development
 
-## Extension Settings
+Requirements: Node.js and a compatible version of Visual Studio Code (`1.138.0` or later).
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+```sh
+npm install
+npm test
+```
 
-For example:
+To launch the extension during development, open this project in VS Code and press **F5**. This starts an Extension Development Host with PokeCode loaded.
 
-This extension contributes the following settings:
+Available scripts:
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+- `npm run compile` compiles the TypeScript source.
+- `npm run lint` checks the source with ESLint.
+- `npm test` compiles, lints, and runs the extension tests.
 
-## Known Issues
+## Data and Assets
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+Game progress is stored using the VS Code extension's global state and persists across sessions. Resetting progress removes the saved Pokedex and box collection.
 
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
+Pokemon sprites are bundled in the extension's `media` directory. The project is an independent fan project and is not affiliated with or endorsed by Nintendo, Game Freak, or The Pokemon Company. Pokemon names and imagery are the property of their respective owners. Review the applicable asset terms before redistributing the extension.
 
 * [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
 * [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)

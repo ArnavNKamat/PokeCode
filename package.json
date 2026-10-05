@@ -16,6 +16,10 @@
       {
         "command": "poke-code.open",
         "title": "PokeCode: Open"
+      },
+      {
+        "command": "poke-code.resetData",
+        "title": "PokeCode: Reset Data"
       }
     ],
     "viewsContainers": {
