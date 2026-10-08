@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { Pokemon, pokemonList } from "./pokemon";
+import { getPokemonSpeciesData } from "./pokemonSpeciesData";
 import { getRandomEncounter, tryCatchGenI } from "./encounters";
 
 const INITIAL_BOX_COUNT = 1;
@@ -11,6 +12,23 @@ interface StoredPokemon extends Pokemon {
     uid: string;
     nickname?: string;
     positionId: number;
+    gender: PokemonGender;
+    heightMeters: number;
+    weightKg: number;
+    egg?: EggProgress;
+}
+
+type PokemonGender = "Male" | "Female" | "Genderless";
+
+interface EggProgress {
+    encounters: number;
+    requiredEncounters: number;
+}
+
+interface IndividualDetails {
+    gender: PokemonGender;
+    heightMeters: number;
+    weightKg: number;
 }
 
 interface GameState {
@@ -30,6 +48,7 @@ interface AchievementStatus {
     category: AchievementCategory;
     title: string;
     description: string;
+    reward?: string;
     progress: number;
     target: number;
     unlocked: boolean;
@@ -38,29 +57,60 @@ interface AchievementStatus {
 type AchievementCategory = "general" | "kanto";
 type AchievementMetric = "catches" | "species" | "legendaries" | "mew" | "seen";
 
+export function generatePokemonIndividualDetails(
+    speciesId: string,
+    random: () => number = Math.random
+): IndividualDetails {
+    const data = getPokemonSpeciesData(speciesId);
+    const gender = data.genderRate < 0
+        ? "Genderless"
+        : random() * 8 < data.genderRate ? "Female" : "Male";
+    const variation = () => 0.95 + random() * 0.1;
+
+    return {
+        gender,
+        heightMeters: Math.max(0.01, Number((data.heightDecimeters / 10 * variation()).toFixed(2))),
+        weightKg: Math.max(0.01, Number((data.weightHectograms / 10 * variation()).toFixed(2)))
+    };
+}
+
+export function canBreedPokemon(
+    first: Pick<StoredPokemon, "uid" | "id" | "gender" | "egg">,
+    second: Pick<StoredPokemon, "uid" | "id" | "gender" | "egg">
+): boolean {
+    return first.uid !== second.uid &&
+        first.id === second.id &&
+        !first.egg &&
+        !second.egg &&
+        first.gender !== "Genderless" &&
+        second.gender !== "Genderless" &&
+        first.gender !== second.gender;
+}
+
 const LEGENDARY_IDS = ["0144", "0145", "0146", "0150"];
 const ACHIEVEMENTS: Array<{
     id: string;
     category: AchievementCategory;
     title: string;
     description: string;
+    reward?: string;
     target: number;
     metric: AchievementMetric;
 }> = [
     { id: "catch-1", category: "general", title: "First Catch", description: "Catch your first Pokémon.", target: 1, metric: "catches" },
-    { id: "catch-10", category: "general", title: "Getting Started", description: "Catch 10 Pokémon. Unlocks Box 2.", target: 10, metric: "catches" },
+    { id: "catch-10", category: "general", title: "Getting Started", description: "Catch 10 Pokémon.", reward: "Box reward: Unlocks Box 2", target: 10, metric: "catches" },
     { id: "catch-25", category: "general", title: "Regular Trainer", description: "Catch 25 Pokémon.", target: 25, metric: "catches" },
-    { id: "catch-50", category: "general", title: "Persistent Trainer", description: "Catch 50 Pokémon. Unlocks Box 3.", target: 50, metric: "catches" },
-    { id: "catch-100", category: "general", title: "Dedicated Trainer", description: "Catch 100 Pokémon. Unlocks Box 4.", target: 100, metric: "catches" },
+    { id: "catch-50", category: "general", title: "Persistent Trainer", description: "Catch 50 Pokémon.", reward: "Box reward: Unlocks Box 3", target: 50, metric: "catches" },
+    { id: "catch-100", category: "general", title: "Dedicated Trainer", description: "Catch 100 Pokémon.", reward: "Box reward: Unlocks Box 4", target: 100, metric: "catches" },
     { id: "catch-250", category: "general", title: "Seasoned Trainer", description: "Catch 250 Pokémon.", target: 250, metric: "catches" },
     { id: "catch-1000", category: "general", title: "Master Collector", description: "Catch 1,000 Pokémon.", target: 1000, metric: "catches" },
     { id: "species-1", category: "kanto", title: "A Kanto Beginning", description: "Catch your first Kanto species.", target: 1, metric: "species" },
-    { id: "species-10", category: "kanto", title: "Growing Collection", description: "Catch 10 different Kanto species. Unlocks Box 5.", target: 10, metric: "species" },
+    { id: "species-10", category: "kanto", title: "Growing Collection", description: "Catch 10 different Kanto species.", reward: "Box reward: Unlocks Box 5", target: 10, metric: "species" },
     { id: "species-25", category: "kanto", title: "Kanto Explorer", description: "Catch 25 different Kanto species.", target: 25, metric: "species" },
     { id: "species-50", category: "kanto", title: "Kanto Specialist", description: "Catch 50 different Kanto species.", target: 50, metric: "species" },
     { id: "species-100", category: "kanto", title: "Kanto Champion", description: "Catch 100 different Kanto species.", target: 100, metric: "species" },
     { id: "species-151", category: "kanto", title: "Kanto Complete", description: "Catch all 151 Kanto species.", target: 151, metric: "species" },
-    { id: "seen-151", category: "kanto", title: "Complete Field Guide", description: "Encounter all 151 Kanto Pokémon. Unlocks Boxes 6–12.", target: 151, metric: "seen" },
+    { id: "seen-151", category: "kanto", title: "Complete Field Guide", description: "Encounter all 151 Kanto Pokémon.", reward: "Major box reward: Unlocks Boxes 6–12", target: 151, metric: "seen" },
     { id: "legendary-first", category: "kanto", title: "Legendary Encounter", description: "Catch one of Kanto's Legendary Pokémon.", target: 1, metric: "legendaries" },
     { id: "legendary-all", category: "kanto", title: "Legendary Quartet", description: "Catch all four Kanto Legendary Pokémon.", target: 4, metric: "legendaries" },
     { id: "mew", category: "kanto", title: "Mythical Discovery", description: "Catch Mew.", target: 1, metric: "mew" }
@@ -143,10 +193,17 @@ export function getUnlockedBoxCount(
 
 let currentPokemon: Pokemon | undefined;
 let selectedBoxIndex = 0;
+let selectedBreedingPokemonUid: string | undefined;
 let selectedAchievementsCategory: AchievementCategory = "general";
 let provider: PokeCodeProvider | undefined;
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    const currentVersion = context.extension.packageJSON.version as string;
+    const previousVersion = context.globalState.get<string>("pokeCode.lastStartedVersion");
+    const hasExistingGame = context.globalState.get("pokeCode.gameState") !== undefined;
+    const shouldShowUpdateNotice = previousVersion
+        ? previousVersion !== currentVersion
+        : hasExistingGame;
 
     provider = new PokeCodeProvider(context);
 
@@ -196,6 +253,7 @@ export function activate(context: vscode.ExtensionContext) {
                 }
 
                 await resetAllData(context);
+                selectedBreedingPokemonUid = undefined;
 
                 if (provider) {
                     provider.showHome();
@@ -204,6 +262,14 @@ export function activate(context: vscode.ExtensionContext) {
         );
 
     context.subscriptions.push(command, resetDataCommand);
+
+    await context.globalState.update("pokeCode.lastStartedVersion", currentVersion);
+
+    if (shouldShowUpdateNotice) {
+        void vscode.window.showInformationMessage(
+            `PokeCode was updated successfully to version ${currentVersion}. Your saved game is ready.`
+        );
+    }
 }
 
 class PokeCodeProvider
@@ -295,6 +361,16 @@ class PokeCodeProvider
                         this.showBoxes();
                         break;
 
+                    case "breed":
+                        await breedPokemon(this.context, message.uid);
+                        this.showBoxes();
+                        break;
+
+                    case "pokemon-details":
+                        await showPokemonDetails(this.context, message.uid);
+                        this.showBoxes();
+                        break;
+
                     case "pokedex":
                         this.showPokedex();
                         break;
@@ -348,6 +424,7 @@ class PokeCodeProvider
                         }
 
                         await resetAllData(this.context);
+                        selectedBreedingPokemonUid = undefined;
                         this.showHome();
                         break;
                 }
@@ -482,12 +559,17 @@ async function spawnPokemon(
     currentPokemon = pokemon;
 
     const state = normalizeGameState(getGameState(context));
+    const previousUnlocks = new Set(state.achievements.unlocked);
+    const newSpeciesEncountered = !state.seen.includes(pokemon.id);
 
-    if (!state.seen.includes(pokemon.id)) {
-
+    if (newSpeciesEncountered) {
         state.seen.push(pokemon.id);
+    }
 
-        const previousUnlocks = new Set(state.achievements.unlocked);
+    const hatchedPokemon = progressEggs(state.caught);
+    const notifications: string[] = [];
+
+    if (newSpeciesEncountered) {
         const statuses = getAchievementStatuses(
             state.achievements.totalCaught,
             state.achievements.caughtSpecies,
@@ -500,14 +582,55 @@ async function spawnPokemon(
             .filter(achievement => achievement.unlocked)
             .map(achievement => achievement.id);
 
-        await saveGameState(context, state);
-
         if (newlyUnlocked.length > 0) {
-            void vscode.window.showInformationMessage(
+            notifications.push(
                 `Achievement unlocked: ${newlyUnlocked.map(achievement => achievement.title).join(", ")}`
             );
         }
     }
+
+    if (hatchedPokemon.length > 0) {
+        for (const pokemon of hatchedPokemon) {
+            const inputName = await vscode.window.showInputBox({
+                prompt: `Your ${pokemon.name} hatched! Give it a nickname or keep its species name.`,
+                value: pokemon.name,
+                placeHolder: pokemon.name,
+                ignoreFocusOut: true,
+                valueSelection: [0, pokemon.name.length]
+            });
+            const resolvedName = resolveNickname(pokemon, inputName);
+            pokemon.nickname = resolvedName === pokemon.name ? undefined : resolvedName;
+        }
+        notifications.push(
+            `${hatchedPokemon.map(getPokemonDisplayName).join(", ")} ${hatchedPokemon.length === 1 ? "has" : "have"} hatched!`
+        );
+    }
+
+    if (newSpeciesEncountered || hatchedPokemon.length > 0 || state.caught.some(pokemon => pokemon.egg)) {
+        await saveGameState(context, state);
+    }
+
+    if (notifications.length > 0) {
+        void vscode.window.showInformationMessage(notifications.join(" "));
+    }
+}
+
+export function progressEggs(caught: StoredPokemon[]): StoredPokemon[] {
+    const hatchedPokemon: StoredPokemon[] = [];
+
+    for (const pokemon of caught) {
+        if (!pokemon.egg) {
+            continue;
+        }
+
+        pokemon.egg.encounters += 1;
+        if (pokemon.egg.encounters >= pokemon.egg.requiredEncounters) {
+            delete pokemon.egg;
+            hatchedPokemon.push(pokemon);
+        }
+    }
+
+    return hatchedPokemon;
 }
 
 async function catchPokemon(
@@ -564,10 +687,12 @@ async function catchPokemon(
     const resolvedName = resolveNickname(currentPokemon, inputName);
     const previousUnlocks = new Set(state.achievements.unlocked);
     const previousBoxCount = unlockedBoxCount;
+    const individualDetails = generatePokemonIndividualDetails(currentPokemon.id);
 
     const storedPokemon: StoredPokemon = {
 
         ...currentPokemon,
+        ...individualDetails,
 
         uid:
             `${Date.now()}-${Math.random()
@@ -633,9 +758,75 @@ export function resolveNickname(
 }
 
 function getPokemonDisplayName(
-    pokemon: Pick<Pokemon, "name"> & { nickname?: string }
+    pokemon: Pick<Pokemon, "name"> & { nickname?: string; egg?: EggProgress }
 ): string {
+    if (pokemon.egg) {
+        return `${pokemon.name} Egg`;
+    }
     return pokemon.nickname ?? pokemon.name;
+}
+
+function createSeededRandom(seed: string): () => number {
+    let value = 2166136261;
+    for (let index = 0; index < seed.length; index++) {
+        value = Math.imul(value ^ seed.charCodeAt(index), 16777619);
+    }
+
+    return () => {
+        value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
+        return value / 0x100000000;
+    };
+}
+
+function normalizeStoredPokemon(pokemon: StoredPokemon): StoredPokemon {
+    const defaults = generatePokemonIndividualDetails(
+        pokemon.id,
+        createSeededRandom(`${pokemon.uid ?? pokemon.id}:${pokemon.id}`)
+    );
+    const egg = pokemon.egg &&
+        Number.isInteger(pokemon.egg.encounters) &&
+        pokemon.egg.encounters >= 0 &&
+        Number.isInteger(pokemon.egg.requiredEncounters) &&
+        pokemon.egg.requiredEncounters > 0
+        ? pokemon.egg
+        : undefined;
+
+    return {
+        ...pokemon,
+        gender: pokemon.gender === "Male" || pokemon.gender === "Female" || pokemon.gender === "Genderless"
+            ? pokemon.gender
+            : defaults.gender,
+        heightMeters: Number.isFinite(pokemon.heightMeters) && pokemon.heightMeters > 0
+            ? pokemon.heightMeters
+            : defaults.heightMeters,
+        weightKg: Number.isFinite(pokemon.weightKg) && pokemon.weightKg > 0
+            ? pokemon.weightKg
+            : defaults.weightKg,
+        egg
+    };
+}
+
+function generateOffspringDetails(
+    firstParent: StoredPokemon,
+    secondParent: StoredPokemon
+): IndividualDetails {
+    const data = getPokemonSpeciesData(firstParent.id);
+    const gender = data.genderRate < 0
+        ? "Genderless"
+        : Math.random() * 8 < data.genderRate ? "Female" : "Male";
+    const variation = () => 0.95 + Math.random() * 0.1;
+
+    return {
+        gender,
+        heightMeters: Math.max(
+            0.01,
+            Number((((firstParent.heightMeters + secondParent.heightMeters) / 2) * variation()).toFixed(2))
+        ),
+        weightKg: Math.max(
+            0.01,
+            Number((((firstParent.weightKg + secondParent.weightKg) / 2) * variation()).toFixed(2))
+        )
+    };
 }
 
 export function movePokemonToPosition<T extends { uid: string; positionId: number }>(
@@ -742,11 +933,149 @@ async function releasePokemon(
     }
 
     state.caught.splice(index, 1);
+    if (selectedBreedingPokemonUid === uid) {
+        selectedBreedingPokemonUid = undefined;
+    }
 
     await saveGameState(
         context,
         state
     );
+}
+
+async function breedPokemon(
+    context: vscode.ExtensionContext,
+    selectedUid: string
+) {
+    if (!selectedBreedingPokemonUid) {
+        const state = normalizeGameState(getGameState(context));
+        const pokemon = state.caught.find(candidate => candidate.uid === selectedUid);
+        if (!pokemon || pokemon.egg || pokemon.gender === "Genderless") {
+            return;
+        }
+        selectedBreedingPokemonUid = selectedUid;
+        void vscode.window.showInformationMessage(
+            `${getPokemonDisplayName(pokemon)} selected. Now select a same-species Pokémon of the opposite gender.`
+        );
+        return;
+    }
+
+    if (selectedBreedingPokemonUid === selectedUid) {
+        selectedBreedingPokemonUid = undefined;
+        return;
+    }
+
+    const firstState = normalizeGameState(getGameState(context));
+    const firstParent = firstState.caught.find(
+        pokemon => pokemon.uid === selectedBreedingPokemonUid
+    );
+    const secondParent = firstState.caught.find(
+        pokemon => pokemon.uid === selectedUid
+    );
+
+    if (!firstParent || !secondParent || !canBreedPokemon(firstParent, secondParent)) {
+        void vscode.window.showInformationMessage(
+            "Select a different Pokémon of the same species and opposite gender. The first selection is still selected."
+        );
+        return;
+    }
+
+    const unlockedBoxCount = getUnlockedBoxCount(
+        firstState.achievements.totalCaught,
+        firstState.achievements.caughtSpecies,
+        firstState.caught.length,
+        firstState.seen
+    );
+    if (firstState.caught.length >= unlockedBoxCount * BOX_SIZE) {
+        void vscode.window.showWarningMessage(
+            "Your unlocked Boxes are full. Make room for the egg before breeding."
+        );
+        return;
+    }
+
+    const confirmation = await vscode.window.showInformationMessage(
+        `Breed ${getPokemonDisplayName(firstParent)} (${firstParent.gender}) with ${getPokemonDisplayName(secondParent)} (${secondParent.gender})? This will add an egg to your Boxes. The parents will stay in your collection.`,
+        { modal: true },
+        "Yes",
+        "No"
+    );
+
+    if (confirmation !== "Yes") {
+        return;
+    }
+
+    const latestState = normalizeGameState(getGameState(context));
+    const latestParent = latestState.caught.find(pokemon => pokemon.uid === firstParent.uid);
+    const latestPartner = latestState.caught.find(pokemon => pokemon.uid === secondParent.uid);
+    if (!latestParent || !latestPartner || !canBreedPokemon(latestParent, latestPartner)) {
+        selectedBreedingPokemonUid = undefined;
+        void vscode.window.showInformationMessage(
+            "That breeding pair is no longer available."
+        );
+        return;
+    }
+
+    const latestBoxCount = getUnlockedBoxCount(
+        latestState.achievements.totalCaught,
+        latestState.achievements.caughtSpecies,
+        latestState.caught.length,
+        latestState.seen
+    );
+    if (latestState.caught.length >= latestBoxCount * BOX_SIZE) {
+        selectedBreedingPokemonUid = undefined;
+        void vscode.window.showWarningMessage(
+            "Your unlocked Boxes are full. Make room for the egg before breeding."
+        );
+        return;
+    }
+
+    const positionId = getNextOpenPositionId(latestState.caught, latestBoxCount);
+    if (positionId < 0) {
+        selectedBreedingPokemonUid = undefined;
+        void vscode.window.showWarningMessage(
+            "No empty Box slot is available for the egg."
+        );
+        return;
+    }
+
+    const speciesData = getPokemonSpeciesData(latestParent.id);
+    const offspring = generateOffspringDetails(latestParent, latestPartner);
+    const egg: StoredPokemon = {
+        ...latestParent,
+        ...offspring,
+        uid: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        nickname: undefined,
+        positionId,
+        egg: {
+            encounters: 0,
+            requiredEncounters: speciesData.hatchEncounters
+        }
+    };
+
+    latestState.caught.push(egg);
+    selectedBoxIndex = Math.floor(positionId / BOX_SIZE);
+    selectedBreedingPokemonUid = undefined;
+    await saveGameState(context, latestState);
+    void vscode.window.showInformationMessage(
+        `${latestParent.name} egg created. Encounter ${speciesData.hatchEncounters} more Pokémon to hatch it.`
+    );
+}
+
+async function showPokemonDetails(
+    context: vscode.ExtensionContext,
+    uid: string
+) {
+    const pokemon = normalizeGameState(getGameState(context)).caught.find(
+        candidate => candidate.uid === uid
+    );
+    if (!pokemon) {
+        return;
+    }
+
+    const details = pokemon.egg
+        ? `${pokemon.name} Egg\nHatching progress: ${pokemon.egg.encounters} / ${pokemon.egg.requiredEncounters} encounters\nBox ${Math.floor(pokemon.positionId / BOX_SIZE) + 1}`
+        : `${getPokemonDisplayName(pokemon)}\nSpecies: ${pokemon.name}\nGender: ${pokemon.gender}\nHeight: ${pokemon.heightMeters.toFixed(2)} m\nWeight: ${pokemon.weightKg.toFixed(2)} kg\nBox ${Math.floor(pokemon.positionId / BOX_SIZE) + 1}`;
+    await vscode.window.showInformationMessage(details);
 }
 
 function normalizeGameState(state?: Partial<GameState>): GameState {
@@ -758,6 +1087,7 @@ function normalizeGameState(state?: Partial<GameState>): GameState {
         ? state.caught
             .filter((pokemon): pokemon is StoredPokemon => !!pokemon && typeof pokemon === "object")
             .slice(0, KANTO_COMPLETE_BOX_COUNT * BOX_SIZE)
+            .map(normalizeStoredPokemon)
         : [];
     const seen = [...new Set([
         ...savedSeen,
@@ -1039,6 +1369,9 @@ function getBoxesHTML(
     const pokemonByPosition = new Map(
         state.caught.map(pokemon => [pokemon.positionId, pokemon])
     );
+    const selectedBreedingPokemon = state.caught.find(
+        pokemon => pokemon.uid === selectedBreedingPokemonUid
+    );
 
     let slots = "";
 
@@ -1053,15 +1386,21 @@ function getBoxesHTML(
 
         if (pokemon) {
 
-            const displayName = getPokemonDisplayName(pokemon);
-
+            const isEgg = !!pokemon.egg;
+            const displayName = isEgg
+                ? `${pokemon.name} Egg`
+                : getPokemonDisplayName(pokemon);
+            const details = isEgg
+                ? `Hatching: ${pokemon.egg?.encounters} / ${pokemon.egg?.requiredEncounters} encounters`
+                : `${pokemon.gender} · ${pokemon.heightMeters.toFixed(2)} m · ${pokemon.weightKg.toFixed(2)} kg`;
             slots += `
 
             <div
                 id="position-${positionId}"
-                class="slot occupiedSlot"
-                onclick="choosePosition(${positionId})"
-                title="Position ${positionId + 1}"
+                class="slot occupiedSlot ${selectedBreedingPokemonUid === pokemon.uid ? "selectedForBreeding" : ""}"
+                tabindex="0"
+                onclick="activatePokemonSlot(event, '${pokemon.uid}', ${positionId})"
+                title="${details}"
             >
 
                 <img
@@ -1072,20 +1411,35 @@ function getBoxesHTML(
                     ${displayName}
                 </span>
 
-                <button
-                    class="release"
-                    onclick="releasePokemon(event, '${pokemon.uid}')"
-                >
-                    Release
-                </button>
+                <div class="pokemonActions">
+                    <button
+                        class="move"
+                        onclick="beginMove(event, '${pokemon.uid}')"
+                    >
+                        Move
+                    </button>
 
-                <button
-                    class="move"
-                    onclick="beginMove(event, '${pokemon.uid}')"
-                >
-                    Move
-                </button>
+                    <button
+                        onclick="showPokemonDetails(event, '${pokemon.uid}')"
+                    >
+                        View details
+                    </button>
 
+                    <button
+                        class="breed"
+                        ${isEgg || pokemon.gender === "Genderless" ? "disabled" : ""}
+                        onclick="beginBreed(event, '${pokemon.uid}')"
+                    >
+                        ${isEgg ? "Egg cannot breed" : pokemon.gender === "Genderless" ? "Cannot breed" : selectedBreedingPokemonUid === pokemon.uid ? "Cancel breeding selection" : "Select for breeding"}
+                    </button>
+
+                    <button
+                        class="release"
+                        onclick="releasePokemon(event, '${pokemon.uid}')"
+                    >
+                        Release
+                    </button>
+                </div>
             </div>
 
             `;
@@ -1132,6 +1486,10 @@ function getBoxesHTML(
         <p id="moveStatus" class="moveStatus" hidden>
             Choose a destination slot. Occupied slots will swap.
         </p>
+
+        ${selectedBreedingPokemonUid
+            ? `<p class="breedStatus">${selectedBreedingPokemon ? `${getPokemonDisplayName(selectedBreedingPokemon)} (${selectedBreedingPokemon.gender}) selected. ` : ""}Choose a same-species Pokémon of the opposite gender, or cancel the selection from its menu.</p>`
+            : ""}
 
         <h3>
             Box ${safeIndex + 1}
@@ -1235,6 +1593,7 @@ function getCreditsHTML(): string {
             <p>Pokémon names, characters, and related trademarks belong to Nintendo, Creatures Inc., GAME FREAK inc., and The Pokémon Company. PokeCode is an unofficial fan project and is not affiliated with or endorsed by them.</p>
             <p>Generation I catch-rate values are based on Pokémon Red and Blue.</p>
             <p>Bundled Pokémon sprites are sourced from the <a href="https://github.com/PokeAPI/sprites">PokeAPI sprites repository</a>.</p>
+            <p>Species gender ratios, base dimensions, and hatch-cycle values are derived from <a href="https://github.com/veekun/pokedex">veekun/pokedex</a> under the MIT License; the required notice is included with the extension.</p>
 
             <h2>Interface Icons</h2>
             <p>Navigation icons are from <a href="https://github.com/google/material-design-icons">Google Material Design Icons</a>, licensed under Apache 2.0.</p>
@@ -1257,12 +1616,13 @@ function getAchievementsHTML(
     );
     const unlockedCount = allAchievements.filter(achievement => achievement.unlocked).length;
     const entries = achievements.map(achievement => `
-        <div class="achievement ${achievement.unlocked ? "unlocked" : ""}">
+        <div class="achievement ${achievement.unlocked ? "unlocked" : ""} ${achievement.reward ? "boxReward" : ""}">
             <div class="achievementHeading">
                 <b>${achievement.title}</b>
                 <span>${achievement.unlocked ? "Unlocked" : achievement.progress + " / " + achievement.target}</span>
             </div>
             <p>${achievement.description}</p>
+            ${achievement.reward ? `<strong class="achievementReward">${achievement.reward}</strong>` : ""}
             <progress value="${achievement.progress}" max="${achievement.target}" aria-label="${achievement.title} progress"></progress>
         </div>
     `).join("");
@@ -1450,17 +1810,25 @@ button:hover {
 }
 
 .slot {
+    position: relative;
     min-height: 75px;
     background: var(--vscode-editor-background);
     border-radius: 4px;
     text-align: center;
     padding: 3px;
-    overflow: hidden;
     cursor: pointer;
 }
 
 .slot:hover {
     outline: 1px solid var(--vscode-focusBorder);
+}
+
+.occupiedSlot:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+}
+
+.occupiedSlot.selectedForBreeding {
+    outline: 2px solid var(--vscode-testing-iconPassed);
 }
 
 .slot img {
@@ -1475,6 +1843,7 @@ button:hover {
     font-size: 9px;
     overflow: hidden;
     white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .emptySlot {
@@ -1491,15 +1860,55 @@ button:hover {
     margin: 2px 0 0;
 }
 
-.move {
+.pokemonDetails {
+    display: block;
     font-size: 8px;
-    padding: 2px;
-    margin: 2px 0 0;
+    opacity: 0.8;
+    overflow-wrap: anywhere;
+}
+
+.pokemonActions {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    width: 156px;
+    max-width: calc(100vw - 16px);
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px;
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-focusBorder);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px var(--vscode-widget-shadow);
+    cursor: default;
+}
+
+.pokemonActions.open {
+    display: flex;
+}
+
+.pokemonActions button {
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: 30px;
+    padding: 4px 7px;
+    margin: 0;
+    font-size: 11px;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .moveStatus {
     padding: 8px;
     background: var(--vscode-editor-background);
+}
+
+.breedStatus {
+    padding: 8px;
+    background: var(--vscode-editor-background);
+    border-left: 3px solid var(--vscode-testing-iconPassed);
 }
 
 .achievementList {
@@ -1529,6 +1938,31 @@ button:hover {
 
 .achievement.unlocked {
     border-left-color: var(--vscode-testing-iconPassed);
+}
+
+.achievement.boxReward {
+    border: 1px solid var(--vscode-charts-purple);
+    border-left-width: 4px;
+    background: color-mix(in srgb, var(--vscode-charts-purple) 10%, var(--vscode-editor-background));
+}
+
+.achievement.boxReward.unlocked {
+    border-color: var(--vscode-testing-iconPassed);
+    background: color-mix(in srgb, var(--vscode-testing-iconPassed) 12%, var(--vscode-editor-background));
+}
+
+.achievementReward {
+    display: inline-block;
+    margin: 0 0 6px;
+    padding: 3px 7px;
+    border-radius: 10px;
+    background: var(--vscode-charts-purple);
+    color: var(--vscode-editor-background);
+    font-size: 11px;
+}
+
+.achievement.boxReward.unlocked .achievementReward {
+    background: var(--vscode-testing-iconPassed);
 }
 
 .achievementHeading {
@@ -1601,6 +2035,7 @@ ${content}
 
 const vscode = acquireVsCodeApi();
 let selectedMoveUid = null;
+let openPokemonMenu = null;
 
 function send(command, payload = {}) {
 
@@ -1613,6 +2048,7 @@ function send(command, payload = {}) {
 
 function releasePokemon(event, uid) {
     event.stopPropagation();
+    closePokemonMenu();
 
     vscode.postMessage({
         command: "release",
@@ -1623,9 +2059,88 @@ function releasePokemon(event, uid) {
 
 function beginMove(event, uid) {
     event.stopPropagation();
+    closePokemonMenu();
     selectedMoveUid = uid;
     updateMoveStatus();
 }
+
+function beginBreed(event, uid) {
+    event.stopPropagation();
+    send("breed", { uid: uid });
+}
+
+function showPokemonDetails(event, uid) {
+    event.stopPropagation();
+    send("pokemon-details", { uid: uid });
+}
+
+function activatePokemonSlot(event, uid, positionId) {
+    event.stopPropagation();
+    if (selectedMoveUid) {
+        choosePosition(positionId);
+        return;
+    }
+
+    const slot = event.currentTarget;
+    const menu = slot.querySelector(".pokemonActions");
+    if (!menu) {
+        return;
+    }
+
+    if (openPokemonMenu === menu) {
+        closePokemonMenu();
+        return;
+    }
+
+    closePokemonMenu();
+    openPokemonMenu = menu;
+    menu.classList.add("open");
+    menu.style.visibility = "hidden";
+    menu.style.left = "0px";
+    menu.style.top = "0px";
+
+    const slotBounds = slot.getBoundingClientRect();
+    const menuBounds = menu.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = document.documentElement.clientHeight;
+    const gap = 6;
+    const edge = 8;
+    const rightSpace = viewportWidth - slotBounds.right - gap;
+    const leftSpace = slotBounds.left - gap;
+    let left = rightSpace >= menuBounds.width || rightSpace >= leftSpace
+        ? slotBounds.right + gap
+        : slotBounds.left - menuBounds.width - gap;
+    left = Math.max(edge, Math.min(left, viewportWidth - menuBounds.width - edge));
+
+    const belowSpace = viewportHeight - slotBounds.bottom - gap - edge;
+    const aboveSpace = slotBounds.top - gap - edge;
+    let top = belowSpace >= menuBounds.height || belowSpace >= aboveSpace
+        ? slotBounds.bottom + gap
+        : slotBounds.top - menuBounds.height - gap;
+    top = Math.max(edge, Math.min(top, viewportHeight - menuBounds.height - edge));
+
+    menu.style.left = left + "px";
+    menu.style.top = top + "px";
+    menu.style.visibility = "visible";
+}
+
+function closePokemonMenu() {
+    if (openPokemonMenu) {
+        openPokemonMenu.classList.remove("open");
+        openPokemonMenu.style.left = "";
+        openPokemonMenu.style.top = "";
+        openPokemonMenu.style.visibility = "";
+        openPokemonMenu = null;
+    }
+}
+
+document.addEventListener("click", event => {
+    const target = event.target;
+    if (target instanceof Element && (target.closest(".pokemonActions") || target.closest(".occupiedSlot"))) {
+        return;
+    }
+    closePokemonMenu();
+});
 
 function choosePosition(positionId) {
     if (!selectedMoveUid) {
@@ -1636,6 +2151,7 @@ function choosePosition(positionId) {
         uid: selectedMoveUid,
         positionId: positionId
     });
+    closePokemonMenu();
     selectedMoveUid = null;
     updateMoveStatus();
 }
@@ -1661,6 +2177,7 @@ window.addEventListener("message", event => {
 
     app.innerHTML = nextApp.innerHTML;
     document.title = nextDocument.title;
+    openPokemonMenu = null;
     updateMoveStatus();
 });
 

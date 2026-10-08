@@ -3,7 +3,17 @@ import * as assert from 'assert';
 // You can import and use all API from the 'vscode' module
 // as well as import your extension to test it
 import * as vscode from 'vscode';
-import { getAchievementStatuses, getUnlockedBoxCount, movePokemonToPosition, resolveNickname } from '../extension';
+import {
+	canBreedPokemon,
+	generatePokemonIndividualDetails,
+	getAchievementStatuses,
+	getUnlockedBoxCount,
+	movePokemonToPosition,
+	progressEggs,
+	resolveNickname
+} from '../extension';
+import { pokemonList } from '../pokemon';
+import { getPokemonSpeciesData, pokemonSpeciesData } from '../pokemonSpeciesData';
 
 suite('Extension Test Suite', () => {
 	vscode.window.showInformationMessage('Start all tests.');
@@ -54,6 +64,14 @@ suite('Extension Test Suite', () => {
 		assert.ok(unlockedIds.includes('legendary-all'));
 		assert.ok(unlockedIds.includes('mew'));
 		assert.ok(unlockedIds.includes('seen-151'));
+		assert.strictEqual(
+			statuses.find(achievement => achievement.id === 'catch-10')?.reward,
+			'Box reward: Unlocks Box 2'
+		);
+		assert.strictEqual(
+			statuses.find(achievement => achievement.id === 'seen-151')?.reward,
+			'Major box reward: Unlocks Boxes 6–12'
+		);
 	});
 
 	test('achievement pages separate general and Kanto goals', () => {
@@ -92,5 +110,50 @@ suite('Extension Test Suite', () => {
 	test('moving Pokémon cannot target a locked box', () => {
 		const roster = [{ uid: 'one', positionId: 0 }];
 		assert.strictEqual(movePokemonToPosition(roster, 'one', 20, 1), roster);
+	});
+
+	test('species metadata is bundled and generates individual details offline', () => {
+		assert.strictEqual(pokemonSpeciesData.size, 151);
+		assert.ok(pokemonList.every(pokemon => pokemonSpeciesData.has(pokemon.id)));
+		assert.strictEqual(getPokemonSpeciesData('0129').hatchEncounters, 5);
+
+		const malePikachu = generatePokemonIndividualDetails('0025', () => 0.99);
+		assert.strictEqual(malePikachu.gender, 'Male');
+		assert.ok(malePikachu.heightMeters >= 0.38 && malePikachu.heightMeters <= 0.42);
+		assert.ok(malePikachu.weightKg >= 5.7 && malePikachu.weightKg <= 6.3);
+		assert.strictEqual(generatePokemonIndividualDetails('0151').gender, 'Genderless');
+	});
+
+	test('only same-species, opposite-gender Pokémon can breed', () => {
+		const male = { uid: 'male', id: '0025', gender: 'Male' as const };
+		const female = { uid: 'female', id: '0025', gender: 'Female' as const };
+
+		assert.strictEqual(canBreedPokemon(male, female), true);
+		assert.strictEqual(canBreedPokemon(male, { ...female, id: '0026' }), false);
+		assert.strictEqual(canBreedPokemon(male, { ...female, gender: 'Male' }), false);
+		assert.strictEqual(canBreedPokemon(male, { ...female, egg: { encounters: 0, requiredEncounters: 10 } }), false);
+	});
+
+	test('eggs hatch after the species-specific number of later encounters', () => {
+		const egg = {
+			uid: 'egg',
+			id: '0129',
+			name: 'Magikarp',
+			type: 'WATER',
+			catchRate: 255,
+			positionId: 0,
+			gender: 'Male' as const,
+			heightMeters: 0.9,
+			weightKg: 10,
+			egg: { encounters: 0, requiredEncounters: 5 }
+		};
+
+			for (let encounter = 0; encounter < 4; encounter++) {
+				assert.strictEqual(progressEggs([egg]).length, 0);
+				assert.strictEqual(egg.egg?.encounters, encounter + 1);
+			}
+
+			assert.strictEqual(progressEggs([egg]).length, 1);
+		assert.strictEqual(egg.egg, undefined);
 	});
 });

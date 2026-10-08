@@ -2,7 +2,7 @@
   "name": "poke-code",
   "displayName": "PokeCode",
   "description": "A Pokémon companion inside VS Code",
-  "version": "0.7.0",
+  "version": "0.9.0",
   "icon": "media/pokeball.png",
   "engines": {
     "vscode": "^1.138.0"
