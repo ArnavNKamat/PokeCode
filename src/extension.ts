@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { Pokemon, pokemonList } from "./pokemon";
 import { getPokemonSpeciesData } from "./pokemonSpeciesData";
-import { getRandomEncounter, tryCatchGenI } from "./encounters";
+import { ENCOUNTER_CHANCE, getRandomEncounter, getSpeciesSearchChance, tryCatchGenI } from "./encounters";
 
 const INITIAL_BOX_COUNT = 1;
 const KANTO_COMPLETE_BOX_COUNT = 12;
@@ -23,6 +23,7 @@ type PokemonGender = "Male" | "Female" | "Genderless";
 interface EggProgress {
     encounters: number;
     requiredEncounters: number;
+    readyToHatch?: boolean;
 }
 
 interface IndividualDetails {
@@ -56,6 +57,69 @@ interface AchievementStatus {
 
 type AchievementCategory = "general" | "kanto";
 type AchievementMetric = "catches" | "species" | "legendaries" | "mew" | "seen";
+export type BoxSortCriterion = "id" | "caught" | "type";
+export type SortDirection = "asc" | "desc";
+export type BoxSortScope = "all" | "current";
+
+export function sortPokemonForBoxes<T extends Pick<Pokemon, "id" | "type">>(
+    pokemon: T[],
+    criterion: BoxSortCriterion,
+    direction: SortDirection,
+    caughtOrderSource: readonly T[] = pokemon
+): T[] {
+    const caughtOrder = new Map(caughtOrderSource.map((entry, index) => [entry, index]));
+    const getCaughtOrder = (entry: T) => caughtOrder.get(entry) ?? Number.MAX_SAFE_INTEGER;
+    const directionMultiplier = direction === "asc" ? 1 : -1;
+
+    if (criterion === "caught") {
+        return [...pokemon].sort(
+            (first, second) => (getCaughtOrder(first) - getCaughtOrder(second)) * directionMultiplier
+        );
+    }
+
+    if (criterion === "type") {
+        const firstCaughtByType = new Map<string, number>();
+        for (const entry of caughtOrderSource) {
+            const primaryType = entry.type.split("/")[0].trim();
+            const caughtIndex = getCaughtOrder(entry);
+            const currentFirstCaught = firstCaughtByType.get(primaryType);
+            if (currentFirstCaught === undefined || caughtIndex < currentFirstCaught) {
+                firstCaughtByType.set(primaryType, caughtIndex);
+            }
+        }
+
+        return [...pokemon].sort((first, second) => {
+            const firstType = first.type.split("/")[0].trim();
+            const secondType = second.type.split("/")[0].trim();
+            const typeOrder = (
+                firstCaughtByType.get(firstType)! - firstCaughtByType.get(secondType)!
+            ) * directionMultiplier;
+            return typeOrder || getCaughtOrder(first) - getCaughtOrder(second);
+        });
+    }
+
+    return [...pokemon].sort((first, second) => {
+        const idOrder = (Number(first.id) - Number(second.id)) * directionMultiplier;
+        return idOrder || getCaughtOrder(first) - getCaughtOrder(second);
+    });
+}
+
+export function getPokedexSpeciesDetails(species: Pokemon): string {
+    const data = getPokemonSpeciesData(species.id);
+    const genderProbability = data.genderRate < 0
+        ? "Gender probability: Genderless"
+        : `Gender probability: ${100 - data.genderRate * 12.5}% male, ${data.genderRate * 12.5}% female`;
+    const conditionalSpawnRate = 100 / pokemonList.length;
+    const searchSpawnRate = getSpeciesSearchChance() * 100;
+
+    return [
+        `${species.name} (#${species.id})`,
+        `Height: ${(data.heightDecimeters / 10).toFixed(1)} m`,
+        `Weight: ${(data.weightHectograms / 10).toFixed(1)} kg`,
+        genderProbability,
+        `Spawn rate: ${conditionalSpawnRate.toFixed(2)}% when a Pokémon appears; about ${searchSpawnRate.toFixed(2)}% per search (${(ENCOUNTER_CHANCE * 100).toFixed(0)}% chance of any encounter).`
+    ].join("\n");
+}
 
 export function generatePokemonIndividualDetails(
     speciesId: string,
@@ -344,6 +408,17 @@ class PokeCodeProvider
                         this.showBoxes();
                         break;
 
+                    case "boxes-sort":
+                        await sortBoxes(
+                            this.context,
+                            message.criterion,
+                            message.direction,
+                            message.scope,
+                            selectedBoxIndex
+                        );
+                        this.showBoxes();
+                        break;
+
                     case "move-pokemon":
                         await movePokemon(
                             this.context,
@@ -363,6 +438,11 @@ class PokeCodeProvider
 
                     case "breed":
                         await breedPokemon(this.context, message.uid);
+                        this.showBoxes();
+                        break;
+
+                    case "hatch-egg":
+                        await hatchEgg(this.context, message.uid);
                         this.showBoxes();
                         break;
 
@@ -503,7 +583,12 @@ class PokeCodeProvider
         }
 
         const state = getGameState(this.context);
-        this.render(getAchievementsHTML(state, selectedAchievementsCategory));
+        this.render(getAchievementsHTML(
+            state,
+            selectedAchievementsCategory,
+            this.view.webview,
+            this.context.extensionUri
+        ));
     }
 
     private showSettings() {
@@ -566,7 +651,7 @@ async function spawnPokemon(
         state.seen.push(pokemon.id);
     }
 
-    const hatchedPokemon = progressEggs(state.caught);
+    const readyEggs = progressEggs(state.caught);
     const notifications: string[] = [];
 
     if (newSpeciesEncountered) {
@@ -589,24 +674,13 @@ async function spawnPokemon(
         }
     }
 
-    if (hatchedPokemon.length > 0) {
-        for (const pokemon of hatchedPokemon) {
-            const inputName = await vscode.window.showInputBox({
-                prompt: `Your ${pokemon.name} hatched! Give it a nickname or keep its species name.`,
-                value: pokemon.name,
-                placeHolder: pokemon.name,
-                ignoreFocusOut: true,
-                valueSelection: [0, pokemon.name.length]
-            });
-            const resolvedName = resolveNickname(pokemon, inputName);
-            pokemon.nickname = resolvedName === pokemon.name ? undefined : resolvedName;
-        }
+    if (readyEggs.length > 0) {
         notifications.push(
-            `${hatchedPokemon.map(getPokemonDisplayName).join(", ")} ${hatchedPokemon.length === 1 ? "has" : "have"} hatched!`
+            `${readyEggs.map(pokemon => `${pokemon.name} Egg`).join(", ")} ${readyEggs.length === 1 ? "is" : "are"} ready to hatch. Click an egg in Boxes to hatch and name it.`
         );
     }
 
-    if (newSpeciesEncountered || hatchedPokemon.length > 0 || state.caught.some(pokemon => pokemon.egg)) {
+    if (newSpeciesEncountered || readyEggs.length > 0 || state.caught.some(pokemon => pokemon.egg)) {
         await saveGameState(context, state);
     }
 
@@ -616,21 +690,83 @@ async function spawnPokemon(
 }
 
 export function progressEggs(caught: StoredPokemon[]): StoredPokemon[] {
-    const hatchedPokemon: StoredPokemon[] = [];
+    const readyEggs: StoredPokemon[] = [];
 
     for (const pokemon of caught) {
-        if (!pokemon.egg) {
+        if (!pokemon.egg || pokemon.egg.readyToHatch) {
             continue;
         }
 
         pokemon.egg.encounters += 1;
         if (pokemon.egg.encounters >= pokemon.egg.requiredEncounters) {
-            delete pokemon.egg;
-            hatchedPokemon.push(pokemon);
+            pokemon.egg.readyToHatch = true;
+            readyEggs.push(pokemon);
         }
     }
 
-    return hatchedPokemon;
+    return readyEggs;
+}
+
+async function hatchEgg(context: vscode.ExtensionContext, uid: string) {
+    const state = normalizeGameState(getGameState(context));
+    const pokemon = state.caught.find(candidate => candidate.uid === uid);
+    if (!pokemon?.egg?.readyToHatch) {
+        return;
+    }
+
+    const inputName = await vscode.window.showInputBox({
+        prompt: `Your ${pokemon.name} is ready to hatch. Give it a nickname or keep its species name.`,
+        value: pokemon.name,
+        placeHolder: pokemon.name,
+        ignoreFocusOut: true,
+        valueSelection: [0, pokemon.name.length]
+    });
+    if (inputName === undefined) {
+        return;
+    }
+
+    const resolvedName = resolveNickname(pokemon, inputName);
+    pokemon.nickname = resolvedName === pokemon.name ? undefined : resolvedName;
+    delete pokemon.egg;
+    await saveGameState(context, state);
+    void vscode.window.showInformationMessage(`${getPokemonDisplayName(pokemon)} hatched!`);
+}
+
+async function sortBoxes(
+    context: vscode.ExtensionContext,
+    criterion: unknown,
+    direction: unknown,
+    scope: unknown,
+    currentBoxIndex: number
+) {
+    if (
+        (criterion !== "id" && criterion !== "caught" && criterion !== "type") ||
+        (direction !== "asc" && direction !== "desc") ||
+        (scope !== "all" && scope !== "current")
+    ) {
+        return;
+    }
+
+    const state = normalizeGameState(getGameState(context));
+    const boxCount = getUnlockedBoxCount(
+        state.achievements.totalCaught,
+        state.achievements.caughtSpecies,
+        state.caught.length,
+        state.seen
+    );
+    const safeBoxIndex = Math.max(0, Math.min(boxCount - 1, currentBoxIndex));
+    const start = scope === "all" ? 0 : safeBoxIndex * BOX_SIZE;
+    const end = scope === "all" ? boxCount * BOX_SIZE : start + BOX_SIZE;
+    const inScope = state.caught.filter(
+        pokemon => pokemon.positionId >= start && pokemon.positionId < end
+    );
+    const sorted = sortPokemonForBoxes(inScope, criterion, direction, state.caught);
+
+    sorted.forEach((pokemon, index) => {
+        pokemon.positionId = start + index;
+    });
+
+    await saveGameState(context, state);
 }
 
 async function catchPokemon(
@@ -766,6 +902,18 @@ function getPokemonDisplayName(
     return pokemon.nickname ?? pokemon.name;
 }
 
+function escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, character => {
+        switch (character) {
+            case "&": return "&amp;";
+            case "<": return "&lt;";
+            case ">": return "&gt;";
+            case "\"": return "&quot;";
+            default: return "&#39;";
+        }
+    });
+}
+
 function createSeededRandom(seed: string): () => number {
     let value = 2166136261;
     for (let index = 0; index < seed.length; index++) {
@@ -788,7 +936,7 @@ function normalizeStoredPokemon(pokemon: StoredPokemon): StoredPokemon {
         pokemon.egg.encounters >= 0 &&
         Number.isInteger(pokemon.egg.requiredEncounters) &&
         pokemon.egg.requiredEncounters > 0
-        ? pokemon.egg
+        ? { ...pokemon.egg, readyToHatch: pokemon.egg.readyToHatch === true }
         : undefined;
 
     return {
@@ -1073,7 +1221,7 @@ async function showPokemonDetails(
     }
 
     const details = pokemon.egg
-        ? `${pokemon.name} Egg\nHatching progress: ${pokemon.egg.encounters} / ${pokemon.egg.requiredEncounters} encounters\nBox ${Math.floor(pokemon.positionId / BOX_SIZE) + 1}`
+        ? `${pokemon.name} Egg\n${pokemon.egg.readyToHatch ? "Ready to hatch" : `Hatching progress: ${pokemon.egg.encounters} / ${pokemon.egg.requiredEncounters} encounters`}\nBox ${Math.floor(pokemon.positionId / BOX_SIZE) + 1}`
         : `${getPokemonDisplayName(pokemon)}\nSpecies: ${pokemon.name}\nGender: ${pokemon.gender}\nHeight: ${pokemon.heightMeters.toFixed(2)} m\nWeight: ${pokemon.weightKg.toFixed(2)} kg\nBox ${Math.floor(pokemon.positionId / BOX_SIZE) + 1}`;
     await vscode.window.showInformationMessage(details);
 }
@@ -1264,7 +1412,7 @@ function getHomeHTML(
                 Run
             </button>
 
-        </div>
+        </button>
 
         `;
 
@@ -1336,7 +1484,7 @@ function getHomeHTML(
             </button>
 
             <button onclick="send('achievements')">
-                <span class="menuIcon" aria-hidden="true" style="--menu-icon: url('${getMediaURL(webview, extensionUri, "nav-achievements.png")}')"></span>
+                <span class="menuIcon achievementNavIcon" aria-hidden="true" style="--menu-icon: url('${getMediaURL(webview, extensionUri, "trophy.svg")}')"></span>
                 <span>Achievements</span>
             </button>
 
@@ -1391,15 +1539,20 @@ function getBoxesHTML(
                 ? `${pokemon.name} Egg`
                 : getPokemonDisplayName(pokemon);
             const details = isEgg
-                ? `Hatching: ${pokemon.egg?.encounters} / ${pokemon.egg?.requiredEncounters} encounters`
+                ? pokemon.egg?.readyToHatch
+                    ? "Ready to hatch. Open the menu and choose Hatch."
+                    : `Hatching: ${pokemon.egg?.encounters} / ${pokemon.egg?.requiredEncounters} encounters`
                 : `${pokemon.gender} · ${pokemon.heightMeters.toFixed(2)} m · ${pokemon.weightKg.toFixed(2)} kg`;
             slots += `
 
             <div
                 id="position-${positionId}"
                 class="slot occupiedSlot ${selectedBreedingPokemonUid === pokemon.uid ? "selectedForBreeding" : ""}"
+                role="group"
+                aria-label="${escapeHtml(`${displayName}. ${details}. Activate for actions.`)}"
                 tabindex="0"
                 onclick="activatePokemonSlot(event, '${pokemon.uid}', ${positionId})"
+                onkeydown="activatePokemonSlotKey(event, '${pokemon.uid}', ${positionId})"
                 title="${details}"
             >
 
@@ -1408,7 +1561,7 @@ function getBoxesHTML(
                 >
 
                 <span>
-                    ${displayName}
+                    ${escapeHtml(displayName)}
                 </span>
 
                 <div class="pokemonActions">
@@ -1425,13 +1578,9 @@ function getBoxesHTML(
                         View details
                     </button>
 
-                    <button
-                        class="breed"
-                        ${isEgg || pokemon.gender === "Genderless" ? "disabled" : ""}
-                        onclick="beginBreed(event, '${pokemon.uid}')"
-                    >
-                        ${isEgg ? "Egg cannot breed" : pokemon.gender === "Genderless" ? "Cannot breed" : selectedBreedingPokemonUid === pokemon.uid ? "Cancel breeding selection" : "Select for breeding"}
-                    </button>
+                    ${isEgg
+                        ? `<button class="hatch" ${pokemon.egg?.readyToHatch ? `onclick="hatchEgg(event, '${pokemon.uid}')"` : "disabled"}>${pokemon.egg?.readyToHatch ? "Hatch" : "Hatching..."}</button>`
+                        : `<button class="breed" ${pokemon.gender === "Genderless" ? "disabled" : ""} onclick="beginBreed(event, '${pokemon.uid}')">${pokemon.gender === "Genderless" ? "Cannot breed" : selectedBreedingPokemonUid === pokemon.uid ? "Cancel breeding selection" : "Select for breeding"}</button>`}
 
                     <button
                         class="release"
@@ -1452,6 +1601,7 @@ function getBoxesHTML(
                 id="position-${positionId}"
                 class="slot emptySlot"
                 onclick="choosePosition(${positionId})"
+                onkeydown="choosePositionKey(event, ${positionId})"
                 title="Position ${positionId + 1}"
             >
                 Empty
@@ -1483,12 +1633,32 @@ function getBoxesHTML(
             Pokémon stored
         </p>
 
+        <div class="boxSort">
+            <label for="boxSortScope">Sort in</label>
+            <select id="boxSortScope">
+                <option value="all">All unlocked Boxes</option>
+                <option value="current">Current Box only</option>
+            </select>
+            <label for="boxSortCriterion">Sort by</label>
+            <select id="boxSortCriterion">
+                <option value="id">Pokédex number</option>
+                <option value="caught">Catch order</option>
+                <option value="type">Primary type </option>
+            </select>
+            <select id="boxSortDirection" aria-label="Sort direction">
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+            </select>
+            <button onclick="applyBoxSort()">Sort Pokémon</button>
+            <small>Type groups are ordered by when each type was first caught; Pokémon within a group stay in catch order.</small>
+        </div>
+
         <p id="moveStatus" class="moveStatus" hidden>
             Choose a destination slot. Occupied slots will swap.
         </p>
 
         ${selectedBreedingPokemonUid
-            ? `<p class="breedStatus">${selectedBreedingPokemon ? `${getPokemonDisplayName(selectedBreedingPokemon)} (${selectedBreedingPokemon.gender}) selected. ` : ""}Choose a same-species Pokémon of the opposite gender, or cancel the selection from its menu.</p>`
+            ? `<p class="breedStatus">${selectedBreedingPokemon ? `${escapeHtml(getPokemonDisplayName(selectedBreedingPokemon))} (${selectedBreedingPokemon.gender}) selected. ` : ""}Choose a same-species Pokémon of the opposite gender, or cancel the selection from its menu.</p>`
             : ""}
 
         <h3>
@@ -1517,7 +1687,8 @@ function getPokedexHTML(
     const entries = seenPokemon.map(
         entry => `
 
-        <div class="dexEntry">
+        <div class="dexCard">
+        <button class="dexEntry" onclick="togglePokedexDetails(this)" aria-expanded="false" title="Show default species details">
 
             <img src="${getSpriteURL(webview, extensionUri, entry.id)}">
 
@@ -1529,6 +1700,10 @@ function getPokedexHTML(
                 ${entry.name}
             </b>
 
+        </button>
+        <div class="dexDetails" hidden>
+            ${getPokedexSpeciesDetails(entry).split("\n").map(detail => `<div>${detail}</div>`).join("")}
+        </div>
         </div>
 
         `
@@ -1604,7 +1779,9 @@ function getCreditsHTML(): string {
 
 function getAchievementsHTML(
     state: GameState,
-    selectedCategory: AchievementCategory
+    selectedCategory: AchievementCategory,
+    webview: vscode.Webview,
+    extensionUri: vscode.Uri
 ): string {
     const allAchievements = getAchievementStatuses(
         state.achievements.totalCaught,
@@ -1618,7 +1795,10 @@ function getAchievementsHTML(
     const entries = achievements.map(achievement => `
         <div class="achievement ${achievement.unlocked ? "unlocked" : ""} ${achievement.reward ? "boxReward" : ""}">
             <div class="achievementHeading">
-                <b>${achievement.title}</b>
+                <span class="achievementTitle">
+                    <span class="achievementIcon" aria-hidden="true" style="--achievement-icon: url('${getMediaURL(webview, extensionUri, "trophy.svg")}')"></span>
+                    <b>${achievement.title}</b>
+                </span>
                 <span>${achievement.unlocked ? "Unlocked" : achievement.progress + " / " + achievement.target}</span>
             </div>
             <p>${achievement.description}</p>
@@ -1771,6 +1951,10 @@ button:hover {
     mask: var(--menu-icon) center / contain no-repeat;
 }
 
+.achievementNavIcon {
+    background-color: var(--vscode-textLink-foreground);
+}
+
 .reset {
     margin-top: 20px;
     opacity: 0.7;
@@ -1807,6 +1991,28 @@ button:hover {
     grid-template-columns: repeat(4, 1fr);
     gap: 4px;
     margin-bottom: 20px;
+}
+
+.boxNav {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+}
+
+.boxNav button {
+    min-width: 0;
+}
+
+.boxNav button:last-child {
+    grid-column: 3;
+}
+
+.boxNav span {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: center;
+    font-size: 11px;
 }
 
 .slot {
@@ -1852,6 +2058,11 @@ button:hover {
     justify-content: center;
     font-size: 9px;
     opacity: 0.4;
+    cursor: default;
+}
+
+.emptySlot.moveTarget {
+    cursor: pointer;
 }
 
 .release {
@@ -1878,6 +2089,8 @@ button:hover {
     flex-direction: column;
     gap: 3px;
     padding: 6px;
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
     background: var(--vscode-editor-background);
     border: 1px solid var(--vscode-focusBorder);
     border-radius: 4px;
@@ -1909,6 +2122,25 @@ button:hover {
     padding: 8px;
     background: var(--vscode-editor-background);
     border-left: 3px solid var(--vscode-testing-iconPassed);
+}
+
+.boxSort {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 12px 0;
+    padding: 10px;
+    background: var(--vscode-editor-background);
+}
+
+.boxSort select {
+    width: 100%;
+    min-height: 28px;
+}
+
+.boxSort small {
+    opacity: 0.75;
+    line-height: 1.35;
 }
 
 .achievementList {
@@ -1967,6 +2199,7 @@ button:hover {
 
 .achievementHeading {
     display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
 }
@@ -1974,6 +2207,22 @@ button:hover {
 .achievementHeading span {
     opacity: 0.7;
     white-space: nowrap;
+}
+
+.achievementTitle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: normal !important;
+}
+
+.achievementIcon {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    background-color: var(--vscode-textLink-foreground);
+    -webkit-mask: var(--achievement-icon) center / contain no-repeat;
+    mask: var(--achievement-icon) center / contain no-repeat;
 }
 
 .achievement p {
@@ -2003,9 +2252,30 @@ button:hover {
     display: flex;
     align-items: center;
     gap: 8px;
+    color: var(--vscode-foreground);
     background: var(--vscode-editor-background);
     padding: 5px;
     border-radius: 4px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.dexCard {
+    background: var(--vscode-editor-background);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.dexEntry {
+    width: 100%;
+    border-radius: 0;
+}
+
+.dexDetails {
+    padding: 8px 12px 10px 56px;
+    font-size: 12px;
+    line-height: 1.5;
+    border-top: 1px solid var(--vscode-panel-border);
 }
 
 .dexEntry img {
@@ -2069,9 +2339,47 @@ function beginBreed(event, uid) {
     send("breed", { uid: uid });
 }
 
+function hatchEgg(event, uid) {
+    event.stopPropagation();
+    send("hatch-egg", { uid: uid });
+}
+
 function showPokemonDetails(event, uid) {
     event.stopPropagation();
     send("pokemon-details", { uid: uid });
+}
+
+function togglePokedexDetails(button) {
+    const details = button.nextElementSibling;
+    if (!details) {
+        return;
+    }
+
+    const shouldOpen = details.hidden;
+    document.querySelectorAll(".dexDetails").forEach(entry => {
+        entry.hidden = true;
+    });
+    document.querySelectorAll(".dexEntry").forEach(entry => {
+        entry.setAttribute("aria-expanded", "false");
+    });
+
+    details.hidden = !shouldOpen;
+    button.setAttribute("aria-expanded", String(shouldOpen));
+}
+
+function applyBoxSort() {
+    const criterion = document.getElementById("boxSortCriterion");
+    const direction = document.getElementById("boxSortDirection");
+    const scope = document.getElementById("boxSortScope");
+    if (!criterion || !direction || !scope) {
+        return;
+    }
+
+    send("boxes-sort", {
+        criterion: criterion.value,
+        direction: direction.value,
+        scope: scope.value
+    });
 }
 
 function activatePokemonSlot(event, uid, positionId) {
@@ -2124,6 +2432,19 @@ function activatePokemonSlot(event, uid, positionId) {
     menu.style.visibility = "visible";
 }
 
+function activatePokemonSlotKey(event, uid, positionId) {
+    if (event.target !== event.currentTarget) {
+        return;
+    }
+
+    if (event.key !== "Enter" && event.key !== " ") {
+        return;
+    }
+
+    event.preventDefault();
+    activatePokemonSlot(event, uid, positionId);
+}
+
 function closePokemonMenu() {
     if (openPokemonMenu) {
         openPokemonMenu.classList.remove("open");
@@ -2156,11 +2477,34 @@ function choosePosition(positionId) {
     updateMoveStatus();
 }
 
+function choosePositionKey(event, positionId) {
+    if (event.key !== "Enter" && event.key !== " ") {
+        return;
+    }
+
+    event.preventDefault();
+    choosePosition(positionId);
+}
+
 function updateMoveStatus() {
     const status = document.getElementById("moveStatus");
     if (status) {
         status.hidden = !selectedMoveUid;
     }
+
+    document.querySelectorAll(".emptySlot").forEach(slot => {
+        if (selectedMoveUid) {
+            slot.classList.add("moveTarget");
+            slot.setAttribute("role", "button");
+            slot.setAttribute("aria-label", "Empty position; move the selected Pokémon here");
+            slot.tabIndex = 0;
+        } else {
+            slot.classList.remove("moveTarget");
+            slot.removeAttribute("role");
+            slot.removeAttribute("aria-label");
+            slot.tabIndex = -1;
+        }
+    });
 }
 
 window.addEventListener("message", event => {

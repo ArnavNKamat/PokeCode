@@ -6,7 +6,15 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 These version entries are retrospective development milestones based on the Git commit history; they do not imply that these versions were published.
 
-## [0.9.0] - 2026-10-08 (current development version; not yet published)
+## [1.0.0] - Unreleased (current development version)
+
+- Added transparent, blue-tinted trophy icons to achievements.
+- Added default species height, weight, gender probability, and encounter-rate details to seen Pokédex entries.
+- Changed eggs to become ready to hatch after the required encounters; players now click a ready egg to hatch it and choose its name.
+- Added sorting across all unlocked Boxes or only the current Box by Pokédex number, catch order, or primary-type groups.
+- Improved Box navigation and keyboard interaction, escaped player nicknames in Box UI, and corrected max catch-rate behavior so ordinary Poké Balls do not guarantee a catch.
+
+## [0.9.0] - 2026-10-08 (development milestone; published status not implied)
 
 - Added offline, species-specific gender, size, and hatch-cycle data; caught and bred Pokémon retain individual details.
 - Added same-species breeding, egg storage, encounter-based hatching, and hover/focus box actions.

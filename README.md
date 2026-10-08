@@ -7,10 +7,13 @@ PokeCode is an unofficial Pokemon-catching companion that lives in the Visual St
 - Encounter all 151 original Kanto Pokemon.
 - Catch attempts use a Generation I-inspired catch calculation.
 - Give newly caught Pokemon a nickname, or keep their species name.
-- Save each caught Pokémon's gender, height, and weight. Breed compatible same-species pairs, then hatch their eggs by encountering Pokémon; species-specific hatch data and breeding details are bundled for offline play.
+- Save each caught Pokémon's gender, height, and weight. Breed compatible same-species pairs, then encounter Pokémon until eggs are ready to hatch. Click a ready egg to hatch it and choose its name; species-specific hatch data and breeding details are bundled for offline play.
 - Track discoveries in the Pokédex and organize caught Pokémon in boxes of 20 slots each. Start with one box; catch 10, 50, and 100 Pokémon to unlock Boxes 2–4, and catch 10 different Kanto species to unlock Box 5. Encounter all 151 Kanto Pokémon to unlock Boxes 6–12, for 240 total storage slots.
 - Box-reward achievements are highlighted and show the Box unlock reward on their achievement cards.
-- Hover over or focus a Pokémon in a Box to move it, view its details, select it for breeding, or release it. Moving onto an occupied position swaps the two Pokémon.
+- Click a Pokémon in a Box to move it, view its details, select it for breeding, release it, or hatch it when ready. Moving onto an occupied position swaps the two Pokémon.
+- Sort all unlocked Boxes together or only the current Box by Pokédex number, catch order, or primary type. Type groups follow the order their first Pokémon was caught.
+- View each seen Pokédex species' default height, weight, gender probability, and estimated spawn rate.
+- Use the Box screen with improved navigation and keyboard-accessible Pokémon slots; ordinary Poké Balls still allow even common Pokémon to escape.
 - Browse General and Kanto achievement pages for catch milestones, Pokédex progress, and Legendary and Mythical Pokémon. Unlocks are announced when earned.
 - Keep progress between VS Code sessions.
 
@@ -38,9 +41,10 @@ Suggestions and bug reports are welcome. Feel free to [open an issue on GitHub](
 
 ## Version History
 
-The entries below are development milestones reconstructed from the project's commit history. They document how the current version was built and are not a record of published Marketplace releases.
+The entries below are development milestones reconstructed from the project's commit history, followed by the current 1.0.0 work. They are not a record of published Marketplace releases.
 
-- **0.9.0 — 2026-10-08 (current development version):** Added offline, species-specific gender, height, weight, and hatch-cycle data. Caught Pokémon retain their individual details. Compatible same-species pairs can breed to create eggs that occupy Box slots; subsequent encounters advance hatching, and offspring details are randomized with influence from their parents.
+- **1.0.0 — current development version (unreleased):** Added blue-tinted trophy icons, Pokédex species details and accurate encounter odds, click-to-hatch eggs with naming, and sorting by Pokédex number, catch order, or primary type across all Boxes or the current Box. Improved Box navigation and keyboard interaction, and corrected the catch-rate handling for common Pokémon.
+- **0.9.0 — 2026-10-08:** Added offline, species-specific gender, height, weight, and hatch-cycle data. Caught Pokémon retain their individual details. Compatible same-species pairs can breed to create eggs that occupy Box slots; subsequent encounters advance hatching, and offspring details are randomized with influence from their parents.
 - **0.8.0 — 2026-10-08:** Split achievements into General and Kanto pages and added more catch and Pokédex milestones. Changed storage to 20 Pokémon per Box; players start with one Box, unlock Boxes 2–5 through catch and species achievements, and earn Boxes 6–12 by encountering all 151 Kanto Pokémon.
 - **0.7.0 — 2026-10-05:** Added catch, collection, Legendary, and Mythical achievements; added achievement announcements and credits.
 - **0.6.0 — 2026-10-05:** Added all 151 Kanto Pokémon, Generation I-inspired catch mechanics, nicknames, and improved box navigation and organization.
@@ -73,7 +77,7 @@ Game progress, individual Pokémon details, eggs, and achievement unlocks are st
 
 Pokemon sprites are bundled in the extension's `media` directory. The project is an independent fan project and is not affiliated with or endorsed by Nintendo, Game Freak, or The Pokemon Company. Pokemon names and imagery are the property of their respective owners. Review the applicable asset terms before redistributing the extension.
 
-Navigation icons are from [Google Material Design Icons](https://github.com/google/material-design-icons), distributed under the Apache License 2.0.
+Navigation icons include assets from [Google Material Design Icons](https://github.com/google/material-design-icons), distributed under the Apache License 2.0. Achievement trophies use a custom, transparent SVG so the icon can take the VS Code theme's blue accent.
 
 Bundled species gender ratios, base dimensions, and hatch-cycle values are derived from [veekun/pokedex](https://github.com/veekun/pokedex) under the MIT License. See [third-party notices](./THIRD_PARTY_NOTICES.md).
 

@@ -29,10 +29,6 @@ export function tryCatchGenI(
         return false;
     }
 
-    if (catchRate >= 255) {
-        return true;
-    }
-
     const hpFactor = (3 * maxHP - 2 * currentHP) / (3 * maxHP);
     const catchValue = Math.min(
         255,
@@ -44,10 +40,14 @@ export function tryCatchGenI(
     return roll < catchValue;
 }
 
-const ENCOUNTER_CHANCE = 0.75;
+export const ENCOUNTER_CHANCE = 0.75;
+
+export function getSpeciesSearchChance(): number {
+    return ENCOUNTER_CHANCE / pokemonList.length;
+}
 
 export function getRandomEncounter(): Pokemon | undefined {
-    if (Math.random() > ENCOUNTER_CHANCE) {
+    if (Math.random() >= ENCOUNTER_CHANCE) {
         return undefined;
     }
 
