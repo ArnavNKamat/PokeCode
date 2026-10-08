@@ -2,8 +2,10 @@ import * as vscode from "vscode";
 import { Pokemon, pokemonList } from "./pokemon";
 import { getRandomEncounter, tryCatchGenI } from "./encounters";
 
-const BOX_COUNT = 5;
-const BOX_SIZE = 32;
+const INITIAL_BOX_COUNT = 1;
+const KANTO_COMPLETE_BOX_COUNT = 12;
+const BOX_SIZE = 20;
+const KANTO_SPECIES_IDS = new Set(pokemonList.map(pokemon => pokemon.id));
 
 interface StoredPokemon extends Pokemon {
     uid: string;
@@ -25,6 +27,7 @@ interface AchievementProgress {
 
 interface AchievementStatus {
     id: string;
+    category: AchievementCategory;
     title: string;
     description: string;
     progress: number;
@@ -32,33 +35,44 @@ interface AchievementStatus {
     unlocked: boolean;
 }
 
-type AchievementMetric = "catches" | "species" | "legendaries" | "mew";
+type AchievementCategory = "general" | "kanto";
+type AchievementMetric = "catches" | "species" | "legendaries" | "mew" | "seen";
 
 const LEGENDARY_IDS = ["0144", "0145", "0146", "0150"];
 const ACHIEVEMENTS: Array<{
     id: string;
+    category: AchievementCategory;
     title: string;
     description: string;
     target: number;
     metric: AchievementMetric;
 }> = [
-    { id: "catch-1", title: "First Catch", description: "Catch your first Pokemon.", target: 1, metric: "catches" },
-    { id: "catch-10", title: "Getting Started", description: "Catch 10 Pokemon.", target: 10, metric: "catches" },
-    { id: "catch-100", title: "Dedicated Trainer", description: "Catch 100 Pokemon.", target: 100, metric: "catches" },
-    { id: "catch-1000", title: "Master Collector", description: "Catch 1,000 Pokemon.", target: 1000, metric: "catches" },
-    { id: "species-10", title: "Growing Collection", description: "Catch 10 different species.", target: 10, metric: "species" },
-    { id: "species-50", title: "Kanto Specialist", description: "Catch 50 different species.", target: 50, metric: "species" },
-    { id: "species-151", title: "Kanto Complete", description: "Catch all 151 Kanto species.", target: 151, metric: "species" },
-    { id: "legendary-first", title: "Legendary Encounter", description: "Catch one of Kanto's Legendary Pokemon.", target: 1, metric: "legendaries" },
-    { id: "legendary-all", title: "Legendary Quartet", description: "Catch all four Kanto Legendary Pokemon.", target: 4, metric: "legendaries" },
-    { id: "mew", title: "Mythical Discovery", description: "Catch Mew.", target: 1, metric: "mew" }
+    { id: "catch-1", category: "general", title: "First Catch", description: "Catch your first Pokémon.", target: 1, metric: "catches" },
+    { id: "catch-10", category: "general", title: "Getting Started", description: "Catch 10 Pokémon. Unlocks Box 2.", target: 10, metric: "catches" },
+    { id: "catch-25", category: "general", title: "Regular Trainer", description: "Catch 25 Pokémon.", target: 25, metric: "catches" },
+    { id: "catch-50", category: "general", title: "Persistent Trainer", description: "Catch 50 Pokémon. Unlocks Box 3.", target: 50, metric: "catches" },
+    { id: "catch-100", category: "general", title: "Dedicated Trainer", description: "Catch 100 Pokémon. Unlocks Box 4.", target: 100, metric: "catches" },
+    { id: "catch-250", category: "general", title: "Seasoned Trainer", description: "Catch 250 Pokémon.", target: 250, metric: "catches" },
+    { id: "catch-1000", category: "general", title: "Master Collector", description: "Catch 1,000 Pokémon.", target: 1000, metric: "catches" },
+    { id: "species-1", category: "kanto", title: "A Kanto Beginning", description: "Catch your first Kanto species.", target: 1, metric: "species" },
+    { id: "species-10", category: "kanto", title: "Growing Collection", description: "Catch 10 different Kanto species. Unlocks Box 5.", target: 10, metric: "species" },
+    { id: "species-25", category: "kanto", title: "Kanto Explorer", description: "Catch 25 different Kanto species.", target: 25, metric: "species" },
+    { id: "species-50", category: "kanto", title: "Kanto Specialist", description: "Catch 50 different Kanto species.", target: 50, metric: "species" },
+    { id: "species-100", category: "kanto", title: "Kanto Champion", description: "Catch 100 different Kanto species.", target: 100, metric: "species" },
+    { id: "species-151", category: "kanto", title: "Kanto Complete", description: "Catch all 151 Kanto species.", target: 151, metric: "species" },
+    { id: "seen-151", category: "kanto", title: "Complete Field Guide", description: "Encounter all 151 Kanto Pokémon. Unlocks Boxes 6–12.", target: 151, metric: "seen" },
+    { id: "legendary-first", category: "kanto", title: "Legendary Encounter", description: "Catch one of Kanto's Legendary Pokémon.", target: 1, metric: "legendaries" },
+    { id: "legendary-all", category: "kanto", title: "Legendary Quartet", description: "Catch all four Kanto Legendary Pokémon.", target: 4, metric: "legendaries" },
+    { id: "mew", category: "kanto", title: "Mythical Discovery", description: "Catch Mew.", target: 1, metric: "mew" }
 ];
 
 export function getAchievementStatuses(
     totalCaught: number,
-    caughtSpecies: string[]
+    caughtSpecies: string[],
+    seenSpecies: string[] = []
 ): AchievementStatus[] {
-    const species = new Set(caughtSpecies);
+    const species = new Set(caughtSpecies.filter(id => KANTO_SPECIES_IDS.has(id)));
+    const seen = new Set(seenSpecies.filter(id => KANTO_SPECIES_IDS.has(id)));
     const legendaryCount = LEGENDARY_IDS.filter(id => species.has(id)).length;
 
     return ACHIEVEMENTS.map(achievement => {
@@ -77,6 +91,9 @@ export function getAchievementStatuses(
             case "mew":
                 progress = species.has("0151") ? 1 : 0;
                 break;
+            case "seen":
+                progress = seen.size;
+                break;
         }
 
         return {
@@ -87,8 +104,46 @@ export function getAchievementStatuses(
     });
 }
 
+export function getUnlockedBoxCount(
+    totalCaught: number,
+    caughtSpecies: string[],
+    caughtCount = 0,
+    seenSpecies: string[] = []
+): number {
+    const speciesCount = new Set(
+        caughtSpecies.filter(id => KANTO_SPECIES_IDS.has(id))
+    ).size;
+    const seenCount = new Set(
+        seenSpecies.filter(id => KANTO_SPECIES_IDS.has(id))
+    ).size;
+    let unlockedBoxes = INITIAL_BOX_COUNT;
+
+    if (totalCaught >= 10) {
+        unlockedBoxes = 2;
+    }
+    if (totalCaught >= 50) {
+        unlockedBoxes = 3;
+    }
+    if (totalCaught >= 100) {
+        unlockedBoxes = 4;
+    }
+    if (speciesCount >= 10) {
+        unlockedBoxes = 5;
+    }
+    if (seenCount >= 151) {
+        unlockedBoxes = KANTO_COMPLETE_BOX_COUNT;
+    }
+
+    const boxesNeededForCollection = Math.ceil(caughtCount / BOX_SIZE);
+    return Math.min(
+        KANTO_COMPLETE_BOX_COUNT,
+        Math.max(unlockedBoxes, boxesNeededForCollection)
+    );
+}
+
 let currentPokemon: Pokemon | undefined;
 let selectedBoxIndex = 0;
+let selectedAchievementsCategory: AchievementCategory = "general";
 let provider: PokeCodeProvider | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
@@ -140,21 +195,7 @@ export function activate(context: vscode.ExtensionContext) {
                     return;
                 }
 
-                await context.globalState.update(
-                    "pokeCode.gameState",
-                    {
-                        seen: [],
-                                caught: [],
-                                achievements: {
-                                    totalCaught: 0,
-                                    caughtSpecies: [],
-                                    unlocked: []
-                                }
-                    }
-                );
-
-                currentPokemon = undefined;
-                selectedBoxIndex = 0;
+                await resetAllData(context);
 
                 if (provider) {
                     provider.showHome();
@@ -198,7 +239,7 @@ class PokeCodeProvider
                         break;
 
                     case "spawn":
-                        spawnPokemon(this.context);
+                        await spawnPokemon(this.context);
                         this.update();
                         break;
 
@@ -222,7 +263,18 @@ class PokeCodeProvider
                         break;
 
                     case "boxes-next":
-                        selectedBoxIndex = Math.min(BOX_COUNT - 1, selectedBoxIndex + 1);
+                        {
+                            const state = getGameState(this.context);
+                            selectedBoxIndex = Math.min(
+                                getUnlockedBoxCount(
+                                    state.achievements.totalCaught,
+                                    state.achievements.caughtSpecies,
+                                    state.caught.length,
+                                    state.seen
+                                ) - 1,
+                                selectedBoxIndex + 1
+                            );
+                        }
                         this.showBoxes();
                         break;
 
@@ -248,6 +300,17 @@ class PokeCodeProvider
                         break;
 
                     case "achievements":
+                        selectedAchievementsCategory = "general";
+                        this.showAchievements();
+                        break;
+
+                    case "achievements-general":
+                        selectedAchievementsCategory = "general";
+                        this.showAchievements();
+                        break;
+
+                    case "achievements-kanto":
+                        selectedAchievementsCategory = "kanto";
                         this.showAchievements();
                         break;
 
@@ -363,7 +426,7 @@ class PokeCodeProvider
         }
 
         const state = getGameState(this.context);
-        this.render(getAchievementsHTML(state));
+        this.render(getAchievementsHTML(state, selectedAchievementsCategory));
     }
 
     private showSettings() {
@@ -372,7 +435,7 @@ class PokeCodeProvider
             return;
         }
 
-        this.render(getSettingsHTML());
+        this.render(getSettingsHTML(this.context.extension.packageJSON.version));
     }
 
     private showCredits() {
@@ -398,7 +461,7 @@ class PokeCodeProvider
     }
 }
 
-function spawnPokemon(
+async function spawnPokemon(
     context: vscode.ExtensionContext
 ) {
 
@@ -409,7 +472,7 @@ function spawnPokemon(
 
         currentPokemon = undefined;
 
-        vscode.window.showInformationMessage(
+        await vscode.window.showInformationMessage(
             "Nothing appeared..."
         );
 
@@ -424,7 +487,26 @@ function spawnPokemon(
 
         state.seen.push(pokemon.id);
 
-        void saveGameState(context, state);
+        const previousUnlocks = new Set(state.achievements.unlocked);
+        const statuses = getAchievementStatuses(
+            state.achievements.totalCaught,
+            state.achievements.caughtSpecies,
+            state.seen
+        );
+        const newlyUnlocked = statuses.filter(
+            achievement => achievement.unlocked && !previousUnlocks.has(achievement.id)
+        );
+        state.achievements.unlocked = statuses
+            .filter(achievement => achievement.unlocked)
+            .map(achievement => achievement.id);
+
+        await saveGameState(context, state);
+
+        if (newlyUnlocked.length > 0) {
+            void vscode.window.showInformationMessage(
+                `Achievement unlocked: ${newlyUnlocked.map(achievement => achievement.title).join(", ")}`
+            );
+        }
     }
 }
 
@@ -437,11 +519,17 @@ async function catchPokemon(
     }
 
     const state = normalizeGameState(getGameState(context));
+    const unlockedBoxCount = getUnlockedBoxCount(
+        state.achievements.totalCaught,
+        state.achievements.caughtSpecies,
+        state.caught.length,
+        state.seen
+    );
 
-    if (state.caught.length >= BOX_COUNT * BOX_SIZE) {
+    if (state.caught.length >= unlockedBoxCount * BOX_SIZE) {
 
-        vscode.window.showWarningMessage(
-            "All five Pokémon Boxes are full. Release a Pokémon first."
+        void vscode.window.showWarningMessage(
+            "All of your unlocked Pokémon Boxes are full. Release a Pokémon or unlock another Box."
         );
 
         return;
@@ -475,6 +563,7 @@ async function catchPokemon(
 
     const resolvedName = resolveNickname(currentPokemon, inputName);
     const previousUnlocks = new Set(state.achievements.unlocked);
+    const previousBoxCount = unlockedBoxCount;
 
     const storedPokemon: StoredPokemon = {
 
@@ -488,7 +577,7 @@ async function catchPokemon(
             resolvedName === currentPokemon.name
                 ? undefined
                 : resolvedName,
-        positionId: getNextOpenPositionId(state.caught)
+        positionId: getNextOpenPositionId(state.caught, unlockedBoxCount)
     };
 
     state.caught.push(storedPokemon);
@@ -500,7 +589,8 @@ async function catchPokemon(
 
     const statuses = getAchievementStatuses(
         state.achievements.totalCaught,
-        state.achievements.caughtSpecies
+        state.achievements.caughtSpecies,
+        state.seen
     );
     const newlyUnlocked = statuses.filter(
         achievement => achievement.unlocked && !previousUnlocks.has(achievement.id)
@@ -508,16 +598,26 @@ async function catchPokemon(
     state.achievements.unlocked = statuses
         .filter(achievement => achievement.unlocked)
         .map(achievement => achievement.id);
+    const newBoxCount = getUnlockedBoxCount(
+        state.achievements.totalCaught,
+        state.achievements.caughtSpecies,
+        state.caught.length,
+        state.seen
+    );
 
     await saveGameState(context, state);
 
+    const unlockedBoxMessage = newBoxCount > previousBoxCount
+        ? ` ${newBoxCount - previousBoxCount} new Pokémon Box${newBoxCount - previousBoxCount === 1 ? "" : "es"} unlocked!`
+        : "";
+
     if (newlyUnlocked.length > 0) {
-        vscode.window.showInformationMessage(
-            `${getPokemonDisplayName(storedPokemon)} was caught! Achievement unlocked: ${newlyUnlocked.map(achievement => achievement.title).join(", ")}`
+        void vscode.window.showInformationMessage(
+            `${getPokemonDisplayName(storedPokemon)} was caught! Achievement unlocked: ${newlyUnlocked.map(achievement => achievement.title).join(", ")}.${unlockedBoxMessage}`
         );
     } else {
-        vscode.window.showInformationMessage(
-            `${getPokemonDisplayName(storedPokemon)} was caught!`
+        void vscode.window.showInformationMessage(
+            `${getPokemonDisplayName(storedPokemon)} was caught!${unlockedBoxMessage}`
         );
     }
 
@@ -541,7 +641,8 @@ function getPokemonDisplayName(
 export function movePokemonToPosition<T extends { uid: string; positionId: number }>(
     caught: T[],
     uid: string,
-    targetPositionId: number
+    targetPositionId: number,
+    unlockedBoxCount = KANTO_COMPLETE_BOX_COUNT
 ): T[] {
     const source = caught.find(pokemon => pokemon.uid === uid);
 
@@ -549,7 +650,7 @@ export function movePokemonToPosition<T extends { uid: string; positionId: numbe
         !source ||
         !Number.isInteger(targetPositionId) ||
         targetPositionId < 0 ||
-        targetPositionId >= BOX_COUNT * BOX_SIZE ||
+        targetPositionId >= unlockedBoxCount * BOX_SIZE ||
         source.positionId === targetPositionId
     ) {
         return caught;
@@ -570,10 +671,10 @@ export function movePokemonToPosition<T extends { uid: string; positionId: numbe
     });
 }
 
-function getNextOpenPositionId(caught: StoredPokemon[]): number {
+function getNextOpenPositionId(caught: StoredPokemon[], unlockedBoxCount: number): number {
     const occupied = new Set(caught.map(pokemon => pokemon.positionId));
 
-    for (let positionId = 0; positionId < BOX_COUNT * BOX_SIZE; positionId++) {
+    for (let positionId = 0; positionId < unlockedBoxCount * BOX_SIZE; positionId++) {
         if (!occupied.has(positionId)) {
             return positionId;
         }
@@ -588,7 +689,18 @@ async function movePokemon(
     targetPositionId: number
 ) {
     const state = normalizeGameState(getGameState(context));
-    const moved = movePokemonToPosition(state.caught, uid, targetPositionId);
+    const unlockedBoxCount = getUnlockedBoxCount(
+        state.achievements.totalCaught,
+        state.achievements.caughtSpecies,
+        state.caught.length,
+        state.seen
+    );
+    const moved = movePokemonToPosition(
+        state.caught,
+        uid,
+        targetPositionId,
+        unlockedBoxCount
+    );
 
     if (moved === state.caught) {
         return;
@@ -638,15 +750,19 @@ async function releasePokemon(
 }
 
 function normalizeGameState(state?: Partial<GameState>): GameState {
-    const seen = Array.isArray(state?.seen)
+    const savedSeen = Array.isArray(state?.seen)
         ? [...new Set(state.seen.map(value => String(value)))]
         : [];
 
     const caught = Array.isArray(state?.caught)
         ? state.caught
             .filter((pokemon): pokemon is StoredPokemon => !!pokemon && typeof pokemon === "object")
-            .slice(0, BOX_COUNT * BOX_SIZE)
+            .slice(0, KANTO_COMPLETE_BOX_COUNT * BOX_SIZE)
         : [];
+    const seen = [...new Set([
+        ...savedSeen,
+        ...caught.map(pokemon => pokemon.id)
+    ])];
     const savedAchievements = state?.achievements;
     const savedTotalCaught = savedAchievements?.totalCaught;
     const totalCaught = Math.max(
@@ -659,9 +775,15 @@ function normalizeGameState(state?: Partial<GameState>): GameState {
         ...(Array.isArray(savedAchievements?.caughtSpecies) ? savedAchievements.caughtSpecies : []),
         ...caught.map(pokemon => pokemon.id)
     ])];
-    const unlocked = getAchievementStatuses(totalCaught, caughtSpecies)
+    const unlocked = getAchievementStatuses(totalCaught, caughtSpecies, seen)
         .filter(achievement => achievement.unlocked)
         .map(achievement => achievement.id);
+    const unlockedBoxCount = getUnlockedBoxCount(
+        totalCaught,
+        caughtSpecies,
+        caught.length,
+        seen
+    );
 
     const occupied = new Set<number>();
 
@@ -669,7 +791,7 @@ function normalizeGameState(state?: Partial<GameState>): GameState {
         if (
             Number.isInteger(pokemon.positionId) &&
             pokemon.positionId >= 0 &&
-            pokemon.positionId < BOX_COUNT * BOX_SIZE &&
+            pokemon.positionId < unlockedBoxCount * BOX_SIZE &&
             !occupied.has(pokemon.positionId)
         ) {
             occupied.add(pokemon.positionId);
@@ -683,7 +805,7 @@ function normalizeGameState(state?: Partial<GameState>): GameState {
             continue;
         }
 
-        for (let positionId = 0; positionId < BOX_COUNT * BOX_SIZE; positionId++) {
+        for (let positionId = 0; positionId < unlockedBoxCount * BOX_SIZE; positionId++) {
             if (!occupied.has(positionId)) {
                 pokemon.positionId = positionId;
                 occupied.add(positionId);
@@ -860,8 +982,13 @@ function getHomeHTML(
             </div>
 
             <div>
-                <b>${BOX_COUNT * BOX_SIZE}</b>
-                <small>Slots</small>
+                <b>${getUnlockedBoxCount(
+                    state.achievements.totalCaught,
+                    state.achievements.caughtSpecies,
+                    state.caught.length,
+                    state.seen
+                ) * BOX_SIZE}</b>
+                <small>Storage Slots</small>
             </div>
 
         </div>
@@ -901,7 +1028,13 @@ function getBoxesHTML(
     extensionUri: vscode.Uri
 ): string {
 
-    const safeIndex = Math.max(0, Math.min(BOX_COUNT - 1, currentBoxIndex));
+    const unlockedBoxCount = getUnlockedBoxCount(
+        state.achievements.totalCaught,
+        state.achievements.caughtSpecies,
+        state.caught.length,
+        state.seen
+    );
+    const safeIndex = Math.max(0, Math.min(unlockedBoxCount - 1, currentBoxIndex));
     const start = safeIndex * BOX_SIZE;
     const pokemonByPosition = new Map(
         state.caught.map(pokemon => [pokemon.positionId, pokemon])
@@ -986,13 +1119,13 @@ function getBoxesHTML(
 
         <div class="boxNav">
             <button onclick="send('boxes-prev')" ${safeIndex === 0 ? "disabled" : ""}>Previous</button>
-            <span>Box ${safeIndex + 1} / ${BOX_COUNT}</span>
-            <button onclick="send('boxes-next')" ${safeIndex === BOX_COUNT - 1 ? "disabled" : ""}>Next</button>
+            <span>Box ${safeIndex + 1} / ${unlockedBoxCount} unlocked (12 max)</span>
+            <button onclick="send('boxes-next')" ${safeIndex === unlockedBoxCount - 1 ? "disabled" : ""}>Next</button>
         </div>
 
         <p>
             ${state.caught.length}
-            / ${BOX_COUNT * BOX_SIZE}
+            / ${unlockedBoxCount * BOX_SIZE}
             Pokémon stored
         </p>
 
@@ -1065,7 +1198,7 @@ function getPokedexHTML(
     );
 }
 
-function getSettingsHTML(): string {
+function getSettingsHTML(version: string): string {
     return page(
         "Settings",
         `
@@ -1080,6 +1213,8 @@ function getSettingsHTML(): string {
         <button class="reset" onclick="send('reset')">
             Reset Data
         </button>
+
+        <p class="version">Version ${version}</p>
         `
     );
 }
@@ -1108,12 +1243,19 @@ function getCreditsHTML(): string {
     );
 }
 
-function getAchievementsHTML(state: GameState): string {
-    const achievements = getAchievementStatuses(
+function getAchievementsHTML(
+    state: GameState,
+    selectedCategory: AchievementCategory
+): string {
+    const allAchievements = getAchievementStatuses(
         state.achievements.totalCaught,
-        state.achievements.caughtSpecies
+        state.achievements.caughtSpecies,
+        state.seen
     );
-    const unlockedCount = achievements.filter(achievement => achievement.unlocked).length;
+    const achievements = allAchievements.filter(
+        achievement => achievement.category === selectedCategory
+    );
+    const unlockedCount = allAchievements.filter(achievement => achievement.unlocked).length;
     const entries = achievements.map(achievement => `
         <div class="achievement ${achievement.unlocked ? "unlocked" : ""}">
             <div class="achievementHeading">
@@ -1132,7 +1274,20 @@ function getAchievementsHTML(state: GameState): string {
             ← Home
         </button>
 
-        <p>${unlockedCount} / ${achievements.length} unlocked</p>
+        <div class="achievementTabs">
+            <button
+                class="${selectedCategory === "general" ? "selected" : ""}"
+                aria-pressed="${selectedCategory === "general"}"
+                onclick="send('achievements-general')"
+            >General</button>
+            <button
+                class="${selectedCategory === "kanto" ? "selected" : ""}"
+                aria-pressed="${selectedCategory === "kanto"}"
+                onclick="send('achievements-kanto')"
+            >Kanto</button>
+        </div>
+
+        <p>${unlockedCount} / ${allAchievements.length} achievements unlocked</p>
 
         <div class="achievementList">
             ${entries}
@@ -1351,6 +1506,19 @@ button:hover {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.achievementTabs {
+    display: flex;
+    gap: 8px;
+}
+
+.achievementTabs button {
+    flex: 1;
+}
+
+.achievementTabs button.selected {
+    outline: 1px solid var(--vscode-focusBorder);
 }
 
 .achievement {
