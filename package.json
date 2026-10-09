@@ -2,7 +2,16 @@
   "name": "poke-code",
   "displayName": "PokeCode",
   "description": "A Pokémon companion inside VS Code",
+  "publisher": "ArnavNKamat",
   "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ArnavNKamat/PokeCode"
+  },
+  "homepage": "https://github.com/ArnavNKamat/PokeCode",
+  "bugs": {
+    "url": "https://github.com/ArnavNKamat/PokeCode/issues"
+  },
   "icon": "media/pokeball.png",
   "engines": {
     "vscode": "^1.138.0"
