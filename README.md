@@ -12,9 +12,9 @@ When a Pokémon appears, choose **Catch** or **Run**. A catch can fail, includin
 
 - **Pokédex:** Review Pokémon you have encountered. Click an entry to expand its default height, weight, gender probability, and estimated encounter rate.
 - **Boxes:** Your collection starts with one Box of 20 slots. Click a Pokémon to open its action menu: move it, view its individual details, select it for breeding, or release it. Moving it to an occupied slot swaps their positions.
-- **Sorting:** Sort all unlocked Boxes or only the current Box by Pokédex number, catch order, or primary type. Type groups are ordered by when each type was first caught; Pokémon within a group remain in catch order.
+- **Sorting:** Select **Sort Boxes** to reveal sorting options for all unlocked Boxes or only the current Box. Sort by Pokédex number, catch order, or primary type. Type groups are ordered by when each type was first caught; Pokémon within a group remain in catch order.
 - **Breeding and eggs:** Select two Pokémon of the same species and opposite genders, then confirm breeding. Parents stay in your collection. The resulting egg is that same species—not its lowest evolution—and occupies a Box slot. Each later search that finds a Pokémon advances the egg's hatch progress. When it is ready, click the egg and choose a nickname to hatch it.
-- **Achievements:** Track general milestones and Kanto collection goals on separate pages. Achievement cards identify Box rewards; catching 10, 50, and 100 Pokémon unlocks Boxes 2–4, catching 10 different Kanto species unlocks Box 5, and encountering all 151 Kanto species unlocks Boxes 6–12.
+- **Achievements:** Track general milestones and Kanto collection goals on separate pages. General achievements include hatching eggs of 1, 10, 50, and all 126 Kanto species currently eligible for breeding. Achievement cards identify Box rewards; catching 10, 50, and 100 Pokémon unlocks Boxes 2–4, catching 10 different Kanto species unlocks Box 5, and encountering all 151 Kanto species unlocks Boxes 6–12.
 - **Settings:** Check the installed extension version, view credits, or reset saved game data. Reset requires confirmation.
 
 At full capacity, the 12 Boxes hold 240 Pokémon. Eggs count as Pokémon for storage.
@@ -35,9 +35,10 @@ Future plans include adding Pokémon and achievements for other regions, explori
 
 ## Version History
 
-The older entries are retrospective development milestones reconstructed from Git history; they do not imply that those versions were published to the Marketplace. **1.0.0 was released on October 9, 2026.**
+The older entries are retrospective development milestones reconstructed from Git history; they do not imply that those versions were published to the Marketplace. **1.0.0 was released on October 9, 2026.** Version 1.0.1 is in preparation and has not been released.
 
-- **1.0.0 — 2026-10-09 (released):** Added trophy achievement icons, expandable Pokédex species details, click-to-hatch eggs with naming, and sorting by Pokédex number, catch order, or primary type across all Boxes or the current Box. Improved Box navigation and keyboard operation, escaped nicknames in the Box UI, and corrected catch-rate behavior so an ordinary Poké Ball does not guarantee a catch.
+- **1.0.1 — 2026-10-10:** (Released) Added General achievements for hatching eggs from distinct breedable Kanto species, made Box sorting controls hidden until requested, and improved narrow-sidebar layout, keyboard access, focus visibility, and webview markup.
+- **1.0.0 — 2026-10-09:** Added trophy achievement icons, expandable Pokédex species details, click-to-hatch eggs with naming, and sorting by Pokédex number, catch order, or primary type across all Boxes or the current Box. Improved Box navigation and keyboard operation, escaped nicknames in the Box UI, and corrected catch-rate behavior so an ordinary Poké Ball does not guarantee a catch. 
 - **0.9.0 — 2026-10-08:** Added offline species gender, size, and hatch-cycle data; saved individual Pokémon details; and introduced same-species breeding, eggs, and encounter-based hatch progress.
 - **0.8.0 — 2026-10-08:** Added General and Kanto achievement pages, catch and Pokédex milestones, Box unlock rewards, and expanded storage.
 - **0.7.0 — 2026-10-05:** Added catch, collection, Legendary, and Mythical achievements, achievement announcements, and credits.
@@ -70,3 +71,5 @@ The Marketplace extension identifier is **`ArnavNKamat.poke-code`**.
 PokeCode is an independent fan project and is not affiliated with or endorsed by Nintendo, Game Freak, or The Pokémon Company. Pokémon names, characters, and related trademarks belong to their respective owners. Review the applicable asset terms before redistributing the extension.
 
 Pokémon sprites are sourced from the [PokeAPI sprites repository](https://github.com/PokeAPI/sprites). Bundled species gender ratios, base dimensions, and hatch-cycle values are derived from [veekun/pokedex](https://github.com/veekun/pokedex) under the MIT License; see [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md). Navigation icons include assets from [Google Material Design Icons](https://github.com/google/material-design-icons), distributed under the Apache License 2.0. Achievement trophies use a custom transparent SVG. Generation I catch-rate values are based on Pokémon Red and Blue.
+
+PokeCode's original source code is licensed under the [MIT License](./LICENSE). Third-party assets, Pokémon names, characters, and trademarks are not relicensed by it and remain subject to their respective owners' terms.

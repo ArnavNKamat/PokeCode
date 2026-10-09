@@ -41,6 +41,7 @@ interface GameState {
 interface AchievementProgress {
     totalCaught: number;
     caughtSpecies: string[];
+    hatchedSpecies: string[];
     unlocked: string[];
 }
 
@@ -56,7 +57,7 @@ interface AchievementStatus {
 }
 
 type AchievementCategory = "general" | "kanto";
-type AchievementMetric = "catches" | "species" | "legendaries" | "mew" | "seen";
+type AchievementMetric = "catches" | "hatchedSpecies" | "species" | "legendaries" | "mew" | "seen";
 export type BoxSortCriterion = "id" | "caught" | "type";
 export type SortDirection = "asc" | "desc";
 export type BoxSortScope = "all" | "current";
@@ -152,6 +153,14 @@ export function canBreedPokemon(
 }
 
 const LEGENDARY_IDS = ["0144", "0145", "0146", "0150"];
+const BREEDABLE_KANTO_SPECIES_IDS = new Set(
+    pokemonList
+        .filter(pokemon => {
+            const genderRate = getPokemonSpeciesData(pokemon.id).genderRate;
+            return genderRate > 0 && genderRate < 8;
+        })
+        .map(pokemon => pokemon.id)
+);
 const ACHIEVEMENTS: Array<{
     id: string;
     category: AchievementCategory;
@@ -168,6 +177,10 @@ const ACHIEVEMENTS: Array<{
     { id: "catch-100", category: "general", title: "Dedicated Trainer", description: "Catch 100 Pokémon.", reward: "Box reward: Unlocks Box 4", target: 100, metric: "catches" },
     { id: "catch-250", category: "general", title: "Seasoned Trainer", description: "Catch 250 Pokémon.", target: 250, metric: "catches" },
     { id: "catch-1000", category: "general", title: "Master Collector", description: "Catch 1,000 Pokémon.", target: 1000, metric: "catches" },
+    { id: "hatch-species-1", category: "general", title: "First Hatchling", description: "Hatch an egg of a breedable Kanto species.", target: 1, metric: "hatchedSpecies" },
+    { id: "hatch-species-10", category: "general", title: "Hatchling Collector", description: "Hatch eggs of 10 different breedable Kanto species.", target: 10, metric: "hatchedSpecies" },
+    { id: "hatch-species-50", category: "general", title: "Nursery Specialist", description: "Hatch eggs of 50 different breedable Kanto species.", target: 50, metric: "hatchedSpecies" },
+    { id: "hatch-species-all", category: "general", title: "Kanto Hatch Dex", description: "Hatch eggs of every breedable Kanto species.", target: BREEDABLE_KANTO_SPECIES_IDS.size, metric: "hatchedSpecies" },
     { id: "species-1", category: "kanto", title: "A Kanto Beginning", description: "Catch your first Kanto species.", target: 1, metric: "species" },
     { id: "species-10", category: "kanto", title: "Growing Collection", description: "Catch 10 different Kanto species.", reward: "Box reward: Unlocks Box 5", target: 10, metric: "species" },
     { id: "species-25", category: "kanto", title: "Kanto Explorer", description: "Catch 25 different Kanto species.", target: 25, metric: "species" },
@@ -183,10 +196,12 @@ const ACHIEVEMENTS: Array<{
 export function getAchievementStatuses(
     totalCaught: number,
     caughtSpecies: string[],
-    seenSpecies: string[] = []
+    seenSpecies: string[] = [],
+    hatchedSpecies: string[] = []
 ): AchievementStatus[] {
     const species = new Set(caughtSpecies.filter(id => KANTO_SPECIES_IDS.has(id)));
     const seen = new Set(seenSpecies.filter(id => KANTO_SPECIES_IDS.has(id)));
+    const hatched = new Set(hatchedSpecies.filter(id => BREEDABLE_KANTO_SPECIES_IDS.has(id)));
     const legendaryCount = LEGENDARY_IDS.filter(id => species.has(id)).length;
 
     return ACHIEVEMENTS.map(achievement => {
@@ -195,6 +210,9 @@ export function getAchievementStatuses(
         switch (achievement.metric) {
             case "catches":
                 progress = totalCaught;
+                break;
+            case "hatchedSpecies":
+                progress = hatched.size;
                 break;
             case "species":
                 progress = species.size;
@@ -658,7 +676,8 @@ async function spawnPokemon(
         const statuses = getAchievementStatuses(
             state.achievements.totalCaught,
             state.achievements.caughtSpecies,
-            state.seen
+            state.seen,
+            state.achievements.hatchedSpecies
         );
         const newlyUnlocked = statuses.filter(
             achievement => achievement.unlocked && !previousUnlocks.has(achievement.id)
@@ -726,10 +745,34 @@ async function hatchEgg(context: vscode.ExtensionContext, uid: string) {
     }
 
     const resolvedName = resolveNickname(pokemon, inputName);
+    const previousUnlocks = new Set(state.achievements.unlocked);
     pokemon.nickname = resolvedName === pokemon.name ? undefined : resolvedName;
     delete pokemon.egg;
+    if (BREEDABLE_KANTO_SPECIES_IDS.has(pokemon.id)) {
+        state.achievements.hatchedSpecies = [...new Set([
+            ...state.achievements.hatchedSpecies,
+            pokemon.id
+        ])];
+    }
+    const statuses = getAchievementStatuses(
+        state.achievements.totalCaught,
+        state.achievements.caughtSpecies,
+        state.seen,
+        state.achievements.hatchedSpecies
+    );
+    const newlyUnlocked = statuses.filter(
+        achievement => achievement.unlocked && !previousUnlocks.has(achievement.id)
+    );
+    state.achievements.unlocked = statuses
+        .filter(achievement => achievement.unlocked)
+        .map(achievement => achievement.id);
     await saveGameState(context, state);
-    void vscode.window.showInformationMessage(`${getPokemonDisplayName(pokemon)} hatched!`);
+    const achievementMessage = newlyUnlocked.length > 0
+        ? ` Achievement unlocked: ${newlyUnlocked.map(achievement => achievement.title).join(", ")}.`
+        : "";
+    void vscode.window.showInformationMessage(
+        `${getPokemonDisplayName(pokemon)} hatched!${achievementMessage}`
+    );
 }
 
 async function sortBoxes(
@@ -851,7 +894,8 @@ async function catchPokemon(
     const statuses = getAchievementStatuses(
         state.achievements.totalCaught,
         state.achievements.caughtSpecies,
-        state.seen
+        state.seen,
+        state.achievements.hatchedSpecies
     );
     const newlyUnlocked = statuses.filter(
         achievement => achievement.unlocked && !previousUnlocks.has(achievement.id)
@@ -1253,7 +1297,13 @@ function normalizeGameState(state?: Partial<GameState>): GameState {
         ...(Array.isArray(savedAchievements?.caughtSpecies) ? savedAchievements.caughtSpecies : []),
         ...caught.map(pokemon => pokemon.id)
     ])];
-    const unlocked = getAchievementStatuses(totalCaught, caughtSpecies, seen)
+    const hatchedSpecies = [...new Set(
+        Array.isArray(savedAchievements?.hatchedSpecies)
+            ? savedAchievements.hatchedSpecies.map(value => String(value))
+                .filter(id => BREEDABLE_KANTO_SPECIES_IDS.has(id))
+            : []
+    )];
+    const unlocked = getAchievementStatuses(totalCaught, caughtSpecies, seen, hatchedSpecies)
         .filter(achievement => achievement.unlocked)
         .map(achievement => achievement.id);
     const unlockedBoxCount = getUnlockedBoxCount(
@@ -1298,6 +1348,7 @@ function normalizeGameState(state?: Partial<GameState>): GameState {
         achievements: {
             totalCaught,
             caughtSpecies,
+            hatchedSpecies,
             unlocked
         }
     };
@@ -1315,6 +1366,7 @@ function getGameState(
             achievements: {
                 totalCaught: 0,
                 caughtSpecies: [],
+                hatchedSpecies: [],
                 unlocked: []
             }
         }
@@ -1351,6 +1403,7 @@ async function resetAllData(
             achievements: {
                 totalCaught: 0,
                 caughtSpecies: [],
+                hatchedSpecies: [],
                 unlocked: []
             }
         }
@@ -1398,6 +1451,7 @@ function getHomeHTML(
             <img
                 src="${getSpriteURL(webview, extensionUri, pokemon.id)}"
                 class="pokemon"
+                alt="${escapeHtml(pokemon.name)}"
             >
 
             <h2>${pokemon.name}</h2>
@@ -1412,7 +1466,7 @@ function getHomeHTML(
                 Run
             </button>
 
-        </button>
+        </div>
 
         `;
 
@@ -1422,16 +1476,18 @@ function getHomeHTML(
 
         <div class="homeBall">
 
-            <img
-                src="${getMediaURL(webview, extensionUri, "pokeball.png")}"
-                class="pokeball"
-                onclick="send('spawn')"
-            >
+            <button class="spawnButton" aria-label="Look for a Pokémon" onclick="send('spawn')">
+                <img
+                    src="${getMediaURL(webview, extensionUri, "pokeball.png")}"
+                    class="pokeball"
+                    alt=""
+                >
+            </button>
 
             <h2>Open Poké Ball</h2>
 
             <p>
-                Click the Poké Ball to look for a Pokémon.
+                Select the Poké Ball to look for a Pokémon.
             </p>
 
         </div>
@@ -1558,6 +1614,7 @@ function getBoxesHTML(
 
                 <img
                     src="${getSpriteURL(webview, extensionUri, pokemon.id)}"
+                    alt=""
                 >
 
                 <span>
@@ -1633,7 +1690,16 @@ function getBoxesHTML(
             Pokémon stored
         </p>
 
-        <div class="boxSort">
+        <button
+            class="boxSortToggle"
+            aria-controls="boxSortControls"
+            aria-expanded="false"
+            onclick="toggleBoxSort(this)"
+        >
+            Sort Boxes
+        </button>
+
+        <div id="boxSortControls" class="boxSort" hidden>
             <label for="boxSortScope">Sort in</label>
             <select id="boxSortScope">
                 <option value="all">All unlocked Boxes</option>
@@ -1649,7 +1715,7 @@ function getBoxesHTML(
                 <option value="asc">Ascending</option>
                 <option value="desc">Descending</option>
             </select>
-            <button onclick="applyBoxSort()">Sort Pokémon</button>
+            <button onclick="applyBoxSort()">Apply Sort</button>
             <small>Type groups are ordered by when each type was first caught; Pokémon within a group stay in catch order.</small>
         </div>
 
@@ -1690,7 +1756,7 @@ function getPokedexHTML(
         <div class="dexCard">
         <button class="dexEntry" onclick="togglePokedexDetails(this)" aria-expanded="false" title="Show default species details">
 
-            <img src="${getSpriteURL(webview, extensionUri, entry.id)}">
+            <img src="${getSpriteURL(webview, extensionUri, entry.id)}" alt="">
 
             <span>
                 #${entry.id}
@@ -1786,7 +1852,8 @@ function getAchievementsHTML(
     const allAchievements = getAchievementStatuses(
         state.achievements.totalCaught,
         state.achievements.caughtSpecies,
-        state.seen
+        state.seen,
+        state.achievements.hatchedSpecies
     );
     const achievements = allAchievements.filter(
         achievement => achievement.category === selectedCategory
@@ -1850,8 +1917,15 @@ function page(
 <head>
 
 <meta charset="UTF-8">
+<title>${escapeHtml(title)}</title>
 
 <style>
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
 
 body {
     color: var(--vscode-foreground);
@@ -1882,6 +1956,35 @@ button {
 
 button:hover {
     background: var(--vscode-button-hoverBackground);
+}
+
+button:focus-visible,
+select:focus-visible,
+a:focus-visible {
+    outline: 2px solid var(--vscode-focusBorder);
+    outline-offset: 2px;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.spawnButton {
+    width: auto;
+    margin: 0;
+    padding: 0;
+    border-radius: 50%;
+    background: transparent;
+}
+
+.spawnButton:hover {
+    background: transparent;
+}
+
+.spawnButton:focus-visible {
+    outline: 2px solid var(--vscode-focusBorder);
+    outline-offset: 4px;
 }
 
 .homeBall {
@@ -1988,28 +2091,36 @@ button:hover {
 
 .box {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 4px;
     margin-bottom: 20px;
 }
 
 .boxNav {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: center;
-    gap: 6px;
+    gap: 4px 8px;
+    margin: 8px 0;
 }
 
 .boxNav button {
     min-width: 0;
+    margin: 0;
+    box-sizing: border-box;
+    grid-row: 2;
+}
+
+.boxNav button:first-child {
+    grid-column: 1;
 }
 
 .boxNav button:last-child {
-    grid-column: 3;
+    grid-column: 2;
 }
 
 .boxNav span {
-    grid-column: 2;
+    grid-column: 1 / -1;
     grid-row: 1;
     text-align: center;
     font-size: 11px;
@@ -2017,11 +2128,13 @@ button:hover {
 
 .slot {
     position: relative;
+    min-width: 0;
     min-height: 75px;
     background: var(--vscode-editor-background);
     border-radius: 4px;
     text-align: center;
     padding: 3px;
+    box-sizing: border-box;
     cursor: pointer;
 }
 
@@ -2040,6 +2153,7 @@ button:hover {
 .slot img {
     width: 42px;
     height: 42px;
+    max-width: 100%;
     object-fit: contain;
     image-rendering: pixelated;
 }
@@ -2131,6 +2245,14 @@ button:hover {
     margin: 12px 0;
     padding: 10px;
     background: var(--vscode-editor-background);
+}
+
+.boxSort[hidden] {
+    display: none;
+}
+
+.boxSortToggle {
+    margin: 8px 0 0;
 }
 
 .boxSort select {
@@ -2365,6 +2487,16 @@ function togglePokedexDetails(button) {
 
     details.hidden = !shouldOpen;
     button.setAttribute("aria-expanded", String(shouldOpen));
+}
+
+function toggleBoxSort(button) {
+    const controls = document.getElementById("boxSortControls");
+    if (!controls) {
+        return;
+    }
+
+    controls.hidden = !controls.hidden;
+    button.setAttribute("aria-expanded", String(!controls.hidden));
 }
 
 function applyBoxSort() {

@@ -86,6 +86,27 @@ suite('Extension Test Suite', () => {
 		assert.ok(statuses.some(achievement => achievement.id === 'species-1' && achievement.unlocked));
 	});
 
+	test('breeding achievements count distinct breedable species hatched', () => {
+		const breedableSpecies = pokemonList
+			.filter(pokemon => {
+				const genderRate = getPokemonSpeciesData(pokemon.id).genderRate;
+				return genderRate > 0 && genderRate < 8;
+			})
+			.map(pokemon => pokemon.id);
+		const tenSpecies = breedableSpecies.slice(0, 10);
+		const statuses = getAchievementStatuses(0, [], [], [...tenSpecies, tenSpecies[0]]);
+
+		assert.ok(breedableSpecies.length > 50);
+		assert.ok(statuses.some(achievement => achievement.id === 'hatch-species-1' && achievement.unlocked));
+		assert.ok(statuses.some(achievement => achievement.id === 'hatch-species-10' && achievement.unlocked));
+		assert.ok(statuses.some(achievement => achievement.id === 'hatch-species-50' && !achievement.unlocked));
+		assert.ok(statuses.some(achievement => achievement.id === 'hatch-species-all' && !achievement.unlocked));
+
+		const completedStatuses = getAchievementStatuses(0, [], [], breedableSpecies);
+		assert.ok(completedStatuses.some(achievement => achievement.id === 'hatch-species-all' && achievement.unlocked));
+		assert.ok(completedStatuses.find(achievement => achievement.id === 'hatch-species-all')?.progress === breedableSpecies.length);
+	});
+
 	test('box storage unlocks by catch and Kanto collection milestones', () => {
 		assert.strictEqual(getUnlockedBoxCount(0, []), 1);
 		assert.strictEqual(getUnlockedBoxCount(9, []), 1);

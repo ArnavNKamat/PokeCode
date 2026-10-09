@@ -6,6 +6,13 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 Older version entries are retrospective development milestones based on Git history; they do not imply that those versions were published.
 
+## [1.0.1] - 2026-10-10 Released
+
+- Added General achievements for hatching eggs from 1, 10, 50, and all 126 currently breedable Kanto species.
+- Hid Box sorting options until the player opens them with **Sort Boxes**.
+- Improved Box navigation and slot layouts in narrow sidebars, keyboard access to the Poké Ball, and visible keyboard focus.
+- Corrected encounter-screen markup and added webview page titles.
+
 ## [1.0.0] - 2026-10-09
 
 - Added transparent, blue-tinted trophy icons to achievements.

@@ -4,6 +4,7 @@
   "description": "A Pokémon companion inside VS Code",
   "publisher": "ArnavNKamat",
   "version": "1.0.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/ArnavNKamat/PokeCode"
