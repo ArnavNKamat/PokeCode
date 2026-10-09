@@ -1,89 +1,72 @@
 # PokeCode
 
-PokeCode is an unofficial Pokemon-catching companion that lives in the Visual Studio Code Activity Bar. Find Pokemon, build your collection, and organize them without leaving your editor.
+PokeCode is an unofficial Pokémon-catching companion that lives in the Visual Studio Code Activity Bar. Search for Pokémon, grow your Kanto collection, and manage your Boxes without leaving your editor. Version **1.0.0** was released on **October 9, 2026**.
 
-## Features
+## Getting Started
 
-- Encounter all 151 original Kanto Pokemon.
-- Catch attempts use a Generation I-inspired catch calculation.
-- Give newly caught Pokemon a nickname, or keep their species name.
-- Save each caught Pokémon's gender, height, and weight. Breed compatible same-species pairs, then encounter Pokémon until eggs are ready to hatch. Click a ready egg to hatch it and choose its name; species-specific hatch data and breeding details are bundled for offline play.
-- Track discoveries in the Pokédex and organize caught Pokémon in boxes of 20 slots each. Start with one box; catch 10, 50, and 100 Pokémon to unlock Boxes 2–4, and catch 10 different Kanto species to unlock Box 5. Encounter all 151 Kanto Pokémon to unlock Boxes 6–12, for 240 total storage slots.
-- Box-reward achievements are highlighted and show the Box unlock reward on their achievement cards.
-- Click a Pokémon in a Box to move it, view its details, select it for breeding, release it, or hatch it when ready. Moving onto an occupied position swaps the two Pokémon.
-- Sort all unlocked Boxes together or only the current Box by Pokédex number, catch order, or primary type. Type groups follow the order their first Pokémon was caught.
-- View each seen Pokédex species' default height, weight, gender probability, and estimated spawn rate.
-- Use the Box screen with improved navigation and keyboard-accessible Pokémon slots; ordinary Poké Balls still allow even common Pokémon to escape.
-- Browse General and Kanto achievement pages for catch milestones, Pokédex progress, and Legendary and Mythical Pokémon. Unlocks are announced when earned.
-- Keep progress between VS Code sessions.
+Open the **PokeCode** view from the Activity Bar, or run **PokeCode: Open** from the Command Palette. Click the Poké Ball to search. A search has a 75% chance of finding a Pokémon; when one appears, each of the 151 Kanto species is equally likely.
 
-## Get Started
+When a Pokémon appears, choose **Catch** or **Run**. A catch can fail, including for common Pokémon. After a successful catch, enter a nickname or leave its species name unchanged. Your progress is saved between VS Code sessions.
 
-Open the **PokeCode** view from the Activity Bar. Select the Pokeball to search for a Pokemon. When one appears, choose **Catch** or **Run**. After a successful catch, enter a nickname or leave the species name unchanged.
+## How to Play
 
-Use **Boxes** to browse and organize your collection, **Pokedex** to review discoveries, **Achievements** to track goals, and **Settings** to reset progress. Reset requires two confirmations.
+- **Pokédex:** Review Pokémon you have encountered. Click an entry to expand its default height, weight, gender probability, and estimated encounter rate.
+- **Boxes:** Your collection starts with one Box of 20 slots. Click a Pokémon to open its action menu: move it, view its individual details, select it for breeding, or release it. Moving it to an occupied slot swaps their positions.
+- **Sorting:** Sort all unlocked Boxes or only the current Box by Pokédex number, catch order, or primary type. Type groups are ordered by when each type was first caught; Pokémon within a group remain in catch order.
+- **Breeding and eggs:** Select two Pokémon of the same species and opposite genders, then confirm breeding. Parents stay in your collection. The resulting egg is that same species—not its lowest evolution—and occupies a Box slot. Each later search that finds a Pokémon advances the egg's hatch progress. When it is ready, click the egg and choose a nickname to hatch it.
+- **Achievements:** Track general milestones and Kanto collection goals on separate pages. Achievement cards identify Box rewards; catching 10, 50, and 100 Pokémon unlocks Boxes 2–4, catching 10 different Kanto species unlocks Box 5, and encountering all 151 Kanto species unlocks Boxes 6–12.
+- **Settings:** Check the installed extension version, view credits, or reset saved game data. Reset requires confirmation.
 
-You can also run **PokeCode: Open** or **PokeCode: Reset Data** from the Command Palette.
+At full capacity, the 12 Boxes hold 240 Pokémon. Eggs count as Pokémon for storage.
+
+## Offline Play and Saved Data
+
+Pokémon species data and sprites are bundled with the extension. Encounters, breeding, and hatching do not require fetching game data from the internet. Your Pokédex, Pokémon details, eggs, and achievements are stored in VS Code extension state on your device. Resetting the game deletes this saved progress.
 
 ## Updates
 
-After a new version is published to the Visual Studio Marketplace, VS Code normally updates the extension automatically. Keep **Extensions: Auto Update** enabled in Settings. To look for an update manually, open the Extensions view, select its **More Actions (...)** menu, and choose **Check for Updates**. Updates are available only after the new version has been published.
+VS Code normally updates installed extensions automatically when a newer Marketplace version is available. Keep **Extensions: Auto Update** enabled, or use **Check for Updates** from the Extensions view's **More Actions (...)** menu. VS Code controls installation; PokeCode cannot pause an update for confirmation. On startup, PokeCode reports when it detects that the installed version has changed.
 
-When PokeCode starts after detecting a version change, it confirms that the update started successfully and that the saved game is ready. VS Code controls when extension updates are installed; PokeCode cannot pause that installation for confirmation.
+## Feedback and Future Plans
 
-## Future Plans
+Suggestions and bug reports are welcome. Feel free to [open an issue](https://github.com/ArnavNKamat/PokeCode/issues) or share feedback on the [GitHub repository](https://github.com/ArnavNKamat/PokeCode).
 
-- Add Pokémon from other regions, with more regional achievements.
-- Explore adding music and sound effects.
-- Let Pokémon interact while they are out of their boxes.
-
-Suggestions and bug reports are welcome. Feel free to [open an issue on GitHub](https://github.com/ArnavNkamat/poke-code/issues).
+Future plans include adding Pokémon and achievements for other regions, exploring music and sound effects, and letting Pokémon interact outside their Boxes.
 
 ## Version History
 
-The entries below are development milestones reconstructed from the project's commit history, followed by the current 1.0.0 work. They are not a record of published Marketplace releases.
+The older entries are retrospective development milestones reconstructed from Git history; they do not imply that those versions were published to the Marketplace. **1.0.0 was released on October 9, 2026.**
 
-- **1.0.0 — current development version (unreleased):** Added blue-tinted trophy icons, Pokédex species details and accurate encounter odds, click-to-hatch eggs with naming, and sorting by Pokédex number, catch order, or primary type across all Boxes or the current Box. Improved Box navigation and keyboard interaction, and corrected the catch-rate handling for common Pokémon.
-- **0.9.0 — 2026-10-08:** Added offline, species-specific gender, height, weight, and hatch-cycle data. Caught Pokémon retain their individual details. Compatible same-species pairs can breed to create eggs that occupy Box slots; subsequent encounters advance hatching, and offspring details are randomized with influence from their parents.
-- **0.8.0 — 2026-10-08:** Split achievements into General and Kanto pages and added more catch and Pokédex milestones. Changed storage to 20 Pokémon per Box; players start with one Box, unlock Boxes 2–5 through catch and species achievements, and earn Boxes 6–12 by encountering all 151 Kanto Pokémon.
-- **0.7.0 — 2026-10-05:** Added catch, collection, Legendary, and Mythical achievements; added achievement announcements and credits.
-- **0.6.0 — 2026-10-05:** Added all 151 Kanto Pokémon, Generation I-inspired catch mechanics, nicknames, and improved box navigation and organization.
-- **0.5.0 — 2026-10-01:** Added the Activity Bar experience, five collection boxes, Pokédex, and collection management.
-- **0.4.0 — 2026-10-01:** Added starter Pokémon, weighted encounters, saved progress, and reset support.
+- **1.0.0 — 2026-10-09 (released):** Added trophy achievement icons, expandable Pokédex species details, click-to-hatch eggs with naming, and sorting by Pokédex number, catch order, or primary type across all Boxes or the current Box. Improved Box navigation and keyboard operation, escaped nicknames in the Box UI, and corrected catch-rate behavior so an ordinary Poké Ball does not guarantee a catch.
+- **0.9.0 — 2026-10-08:** Added offline species gender, size, and hatch-cycle data; saved individual Pokémon details; and introduced same-species breeding, eggs, and encounter-based hatch progress.
+- **0.8.0 — 2026-10-08:** Added General and Kanto achievement pages, catch and Pokédex milestones, Box unlock rewards, and expanded storage.
+- **0.7.0 — 2026-10-05:** Added catch, collection, Legendary, and Mythical achievements, achievement announcements, and credits.
+- **0.6.0 — 2026-10-05:** Added all 151 Kanto Pokémon, Generation I-inspired catch mechanics, nicknames, and Box improvements.
+- **0.5.0 — 2026-10-01:** Added the Activity Bar experience, Pokédex, collection Boxes, and Pokémon sprites.
+- **0.4.0 — 2026-10-01:** Added starter Pokémon, encounters, saved progress, and reset support.
 - **0.3.0 — 2026-09-28:** Added starter selection, wild encounters, catch attempts, and persistent game state.
 - **0.2.0 — 2026-09-27:** Added the initial Pokémon roster and a basic encounter-and-catch experience.
 - **0.1.0 — 2026-09-27:** Set up the extension project, VS Code development launch configuration, and test tooling.
 
 ## Development
 
-Requirements: Node.js and a compatible version of Visual Studio Code (`1.138.0` or later).
+Requirements: Node.js and Visual Studio Code `1.138.0` or later.
 
 ```sh
 npm install
 npm test
 ```
 
-To launch the extension during development, open this project in VS Code and press **F5**. This starts an Extension Development Host with PokeCode loaded.
-
-Available scripts:
+To run the extension during development, open the project in VS Code and press **F5**. This starts an Extension Development Host with PokeCode loaded.
 
 - `npm run compile` compiles the TypeScript source.
 - `npm run lint` checks the source with ESLint.
 - `npm test` compiles, lints, and runs the extension tests.
 
-## Data and Assets
+The Marketplace extension identifier is **`ArnavNKamat.poke-code`**.
 
-Game progress, individual Pokémon details, eggs, and achievement unlocks are stored using the VS Code extension's global state and persist across sessions. Species data is bundled locally, so breeding and egg hatching work offline. Resetting progress removes the saved Pokédex, box collection, eggs, and achievements.
+## Credits and Notices
 
-Pokemon sprites are bundled in the extension's `media` directory. The project is an independent fan project and is not affiliated with or endorsed by Nintendo, Game Freak, or The Pokemon Company. Pokemon names and imagery are the property of their respective owners. Review the applicable asset terms before redistributing the extension.
+PokeCode is an independent fan project and is not affiliated with or endorsed by Nintendo, Game Freak, or The Pokémon Company. Pokémon names, characters, and related trademarks belong to their respective owners. Review the applicable asset terms before redistributing the extension.
 
-Navigation icons include assets from [Google Material Design Icons](https://github.com/google/material-design-icons), distributed under the Apache License 2.0. Achievement trophies use a custom, transparent SVG so the icon can take the VS Code theme's blue accent.
-
-Bundled species gender ratios, base dimensions, and hatch-cycle values are derived from [veekun/pokedex](https://github.com/veekun/pokedex) under the MIT License. See [third-party notices](./THIRD_PARTY_NOTICES.md).
-
-Project developer: [ArnavNkamat](https://github.com/ArnavNkamat). Pokémon sprite assets are sourced from the [PokeAPI sprites repository](https://github.com/PokeAPI/sprites). Generation I catch-rate values are based on Pokémon Red and Blue. Pokémon names, characters, and related trademarks belong to their respective owners.
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+Pokémon sprites are sourced from the [PokeAPI sprites repository](https://github.com/PokeAPI/sprites). Bundled species gender ratios, base dimensions, and hatch-cycle values are derived from [veekun/pokedex](https://github.com/veekun/pokedex) under the MIT License; see [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md). Navigation icons include assets from [Google Material Design Icons](https://github.com/google/material-design-icons), distributed under the Apache License 2.0. Achievement trophies use a custom transparent SVG. Generation I catch-rate values are based on Pokémon Red and Blue.
