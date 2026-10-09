@@ -35,7 +35,7 @@ Future plans include adding Pokémon and achievements for other regions, explori
 
 ## Version History
 
-The older entries are retrospective development milestones reconstructed from Git history; they do not imply that those versions were published to the Marketplace. **1.0.0 was released on October 9, 2026.** Version 1.0.1 is in preparation and has not been released.
+The older entries are retrospective development milestones reconstructed from Git history; they do not imply that those versions were published to the Marketplace. **1.0.0 was released on October 9, 2026; 1.0.1 was released on October 10, 2026.**
 
 - **1.0.1 — 2026-10-10:** (Released) Added General achievements for hatching eggs from distinct breedable Kanto species, made Box sorting controls hidden until requested, and improved narrow-sidebar layout, keyboard access, focus visibility, and webview markup.
 - **1.0.0 — 2026-10-09:** Added trophy achievement icons, expandable Pokédex species details, click-to-hatch eggs with naming, and sorting by Pokédex number, catch order, or primary type across all Boxes or the current Box. Improved Box navigation and keyboard operation, escaped nicknames in the Box UI, and corrected catch-rate behavior so an ordinary Poké Ball does not guarantee a catch. 
